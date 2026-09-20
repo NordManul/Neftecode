@@ -1,9 +1,8 @@
-"""OptimizationAgent: сетка 105 вариантов, физические показатели и порядок предпочтения, Парето (шаги 5-7).
+"""OptimizationAgent: сетка вариантов, физические показатели и Парето (шаги 5-7).
 
-Порядок предпочтения среди допустимых вариантов лексикографический, без весов: больший выпуск ГО ДТ, при равном выпуске -
-меньший размер изменения режима (в шагах сетки). Энергозатраты и старение катализатора не оцениваются: для них в
-материалах проекта нет подтверждённых параметров (теплоёмкость потока, температура на входе в печь, закон ускорения
-старения). Тяжесть режима после действия входит в критерии Парето.
+Порядок предпочтения среди допустимых вариантов лексикографический: больший выпуск ГО ДТ, меньшая оценка
+энергетической нагрузки и меньший размер изменения режима. Энергия представлена прозрачным относительным
+тепловым proxy, а не промышленным счётчиком: `F9_new * cp * max(T5_new - inlet_temperature, 0)`.
 
 Оценки качества/надёжности запрашиваются ТОЛЬКО через шину - не вызывает агентов напрямую.
 """
@@ -38,19 +37,32 @@ class OptimizationAgent:
         return table
 
     def _ranking(self, table: pd.DataFrame, snap) -> pd.DataFrame:
-        """Выпуск (т/ч), размер изменения (в шагах сетки) и лексикографический порядок `rating` (больше - предпочтительнее)."""
+        """Выпуск, тепловой proxy, размер изменения и лексикографический порядок."""
         f9_now = snap.values["F9"]
         s_t5, s_f9, s_f32 = self.steps
         table["d_prod_tph"] = v(self.cfg["process"]["ht_yield"]) * f9_now * table["rF9"]
+        inlet = v(self.cfg["process"]["ht_inlet_temp_c"])
+        cp = v(self.cfg["process"]["cp_kj_kg_k"])
+        table["energy_proxy_mw"] = (
+            table["F9_new"] * cp * (table["T5_new"] - inlet).clip(lower=0) / 3600.0
+        )
         table["moves"] = table["dT5"].abs() / s_t5 + table["rF9"].abs() / s_f9 + table["dF32"].abs() / s_f32
-        order = table.sort_values(["d_prod_tph", "moves", "id"], ascending=[False, True, True]).index
+        order = table.sort_values(
+            ["d_prod_tph", "moves", "energy_proxy_mw", "id"],
+            ascending=[False, True, True, True],
+        ).index
         table["rating"] = pd.Series(-np.arange(len(order), dtype=float), index=order).reindex(table.index)
         return table
 
     def _pareto(self, table: pd.DataFrame) -> pd.Series:
         feas = table[table["feasible"]]
-        crit = pd.DataFrame({"production": feas["d_prod_tph"], "quality_margin": feas["quality_margin"],
-                              "neg_severity": -feas["severity_after"], "neg_moves": -feas["moves"]}).to_numpy()
+        crit = pd.DataFrame({
+            "production": feas["d_prod_tph"],
+            "neg_energy_proxy": -feas["energy_proxy_mw"],
+            "quality_margin": feas["quality_margin"],
+            "neg_severity": -feas["severity_after"],
+            "neg_moves": -feas["moves"],
+        }).to_numpy()
         is_pareto = np.ones(len(crit), dtype=bool)
         for i in range(len(crit)):
             dominates_i = np.all(crit >= crit[i], axis=1) & np.any(crit > crit[i], axis=1)
