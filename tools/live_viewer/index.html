@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Система поддержки решений оператора — интерактивное воспроизведение</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1a; --muted: #666; --border: #e2e2e2;
+    --accent: #2563eb; --ok: #16a34a; --warn: #d97706; --bad: #dc2626; --gray: #6b7280;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161a; --card: #1e2126; --text: #eaeaea; --muted: #9aa0a6; --border: #2c3038; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+         font: 14px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  button { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 8px 14px;
+           font-size: 13px; cursor: pointer; }
+  button.secondary { background: var(--gray); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  input[type=range] { width: 100%; }
+  input[type=datetime-local], select { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                                        border-radius: 6px; padding: 6px; }
+  .time-display { font-size: 20px; font-weight: 600; }
+  .status-badge { display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; font-size: 13px; }
+  .status-none { background: #16a34a33; color: var(--ok); }
+  .status-action { background: #d9770633; color: var(--warn); }
+  .status-refuse { background: #dc262633; color: var(--bad); }
+  .status-observe { background: #6b728033; color: var(--gray); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .slider-row { margin-bottom: 10px; }
+  .slider-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 13px; }
+  .kv div:nth-child(odd) { color: var(--muted); }
+  .log-feed { max-height: 220px; overflow-y: auto; font-size: 12px; font-family: ui-monospace, monospace; }
+  .log-feed div { padding: 2px 0; border-bottom: 1px solid var(--border); }
+  .warn-banner { background: #d9770622; border: 1px solid var(--warn); border-radius: 8px; padding: 8px 12px;
+                 font-size: 13px; margin-bottom: 12px; }
+  #err { color: var(--bad); font-size: 13px; }
+  .section-intro { font-size: 12px; color: var(--muted); margin: -4px 0 12px; }
+  .info { position: relative; display: inline-flex; align-items: center; justify-content: center;
+          width: 15px; height: 15px; border-radius: 50%; background: var(--muted); color: var(--card);
+          font-size: 11px; font-style: italic; font-family: Georgia, 'Times New Roman', serif;
+          cursor: help; margin-left: 6px; flex: none; }
+  .info .tip { visibility: hidden; opacity: 0; position: absolute; bottom: 130%; left: 50%;
+               transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 11px;
+               border-radius: 6px; font-size: 12px; font-style: normal; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+               width: 260px; line-height: 1.45; transition: opacity .15s; z-index: 20; text-align: left; }
+  .info:hover .tip, .info:focus .tip { visibility: visible; opacity: 1; }
+  .muted { color: var(--muted); }
+  .ok-text { color: var(--ok); font-weight: 600; }
+  .bad-text { color: var(--bad); font-weight: 600; }
+  details.card > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text); }
+  .a-head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  .a-head label.btn { background: var(--gray); color: #fff; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
+  .a-status { font-size: 13px; margin-left: 4px; }
+  .a-status.ok { color: var(--ok); } .a-status.error { color: var(--bad); } .a-status.busy { color: var(--warn); }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .tabs .tab { background: transparent; color: var(--muted); border-radius: 6px 6px 0 0; padding: 7px 12px; }
+  .tabs .tab.active { background: var(--accent); color: #fff; }
+  .a-section { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 14px 0 4px; }
+  .a-row { display: grid; grid-template-columns: minmax(240px, 1.3fr) minmax(220px, 1.2fr) minmax(200px, 1fr);
+           gap: 4px 12px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; }
+  .a-row.changed { border-left-color: var(--accent); }
+  .a-row.edited { border-left-color: var(--warn); background: #d9770611; }
+  .a-row.invalid { border-left-color: var(--bad); }
+  .a-row .a-err { grid-column: 1 / -1; color: var(--bad); font-size: 12px; }
+  .a-row .a-err:empty { display: none; }
+  .a-label { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+  .a-input { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .a-input input, .a-input select { width: 96px; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                                    border-radius: 6px; padding: 5px 6px; font-size: 13px; }
+  .a-input select { width: auto; }
+  .a-mini, .a-unit { font-size: 12px; color: var(--muted); }
+  .a-fixed { font-weight: 600; }
+  .a-meta { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
+  .a-effect { font-style: italic; }
+  button.link { background: none; color: var(--accent); padding: 0; text-align: left; font-size: 12px; }
+  .src { font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 8px; background: var(--border); color: var(--muted); }
+  .src-DATA { background: #2563eb22; color: var(--accent); }
+  .src-GOST, .src-REQUIREMENT, .src-TASK { background: #16a34a22; color: var(--ok); }
+  .src-LIT { background: #6b728033; color: var(--gray); }
+  .a-label .info .tip { left: -4px; transform: none; }
+  .a-input input[type=checkbox] { width: auto; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; background: var(--border); }
+  .share-bar { display: inline-block; height: 8px; background: var(--accent); border-radius: 4px; vertical-align: middle; margin-right: 6px; }
+  .blend-note { font-size: 12px; color: var(--muted); margin: 8px 0; }
+  .na-text { color: var(--muted); }
+  .a-strip { position: sticky; top: 0; z-index: 10; background: var(--card); border: 1px solid var(--accent); border-radius: 8px;
+             padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+  .tip-meta { display: block; margin-top: 6px; opacity: .8; }
+  .a-refs { flex-basis: 100%; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .a-refs a { color: var(--accent); }
+  .ref-none { color: var(--warn); }
+  @media (max-width: 900px) { .a-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>Мультиагентная система поддержки решений оператора</h1>
+<p class="section-intro" style="margin-top:-8px">Интерактивное воспроизведение по данным отложенного периода</p>
+
+<div class="card row" style="justify-content: space-between;">
+  <div class="row">
+    <button id="playBtn">Воспроизвести</button>
+    <select id="speed">
+      <option value="1500">0.5×</option>
+      <option value="800" selected>1×</option>
+      <option value="350">2×</option>
+      <option value="120">5×</option>
+    </select>
+    <span class="muted">Шаг воспроизведения: 6 ч</span>
+  </div>
+  <div class="time-display" id="timeDisplay">—</div>
+  <div class="row">
+    <input type="datetime-local" id="jumpTime" step="3600">
+    <button class="secondary" id="jumpBtn">Перейти</button>
+    <button class="secondary" id="openAssumptions">Допущения</button>
+  </div>
+</div>
+
+<div id="err"></div>
+<div class="warn-banner" id="whatifBanner" style="display:none">
+  Отображается результат расчёта при значениях параметров, заданных вручную и отличающихся от
+  показаний датчиков на выбранный момент. Это результат моделирования, а не действующая
+  рекомендация системы для фактического режима.
+</div>
+
+<div class="warn-banner" id="assumptionsBanner" style="display:none">
+  Действуют изменённые допущения: <b id="assumptionsCount">0</b>. Расчёт отличается от базового и не является
+  рекомендацией для фактического режима.
+  <button class="secondary" id="bannerOpen" style="margin-left:8px">Открыть</button>
+  <button class="secondary" id="bannerReset">Сбросить все</button>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h3>Задание сценарных параметров</h3>
+    <p class="section-intro">
+      Значения задаются как отклонение от показаний датчиков на выбранный момент времени и
+      передаются в те же агенты качества и надёжности, что и в штатном режиме. Заданные значения
+      сохраняются при воспроизведении по времени — можно наблюдать развитие сценария.
+    </p>
+    <div class="slider-row">
+      <div class="slider-label">
+        <span>ΔT5, °C
+          <span class="info" tabindex="0">i<span class="tip">Температура парогазовой смеси на
+            выходе реактора Р-201 (управляющее воздействие блока гидроочистки). Повышение снижает
+            содержание серы в дизельном топливе и повышает нагрузку на катализатор.</span></span>
+        </span>
+        <span id="dT5val">0</span>
+      </div>
+      <input type="range" id="dT5" min="-8" max="8" step="0.5" value="0">
+    </div>
+    <div class="slider-row">
+      <div class="slider-label">
+        <span>ΔF9, т/ч
+          <span class="info" tabindex="0">i<span class="tip">Массовый расход сырья на установку
+            гидроочистки (управляющее воздействие). Снижение расхода уменьшает содержание серы в
+            продукте, но снижает выпуск; увеличение требует подтверждения наличия сырья.</span></span>
+        </span>
+        <span id="dF9val">0</span>
+      </div>
+      <input type="range" id="dF9" min="-40" max="40" step="1" value="0">
+    </div>
+    <div class="slider-row">
+      <div class="slider-label">
+        <span>ΔF32, т/ч
+          <span class="info" tabindex="0">i<span class="tip">Расход фракции 240–290 °C, отбираемой
+            с установки АВТ (управляющее воздействие блока АВТ). Влияет на температуру конца
+            кипения (T95) товарного дизельного топлива с задержкой около 4 часов.</span></span>
+        </span>
+        <span id="dF32val">0</span>
+      </div>
+      <input type="range" id="dF32" min="-10" max="10" step="0.5" value="0">
+    </div>
+    <button class="secondary" id="resetBtn">Сбросить к измеренным значениям</button>
+  </div>
+
+  <div class="card">
+    <h3>Статус</h3>
+    <div id="statusBadge" class="status-badge status-observe">—</div>
+    <p id="explanation" style="margin-top:10px"></p>
+  </div>
+</div>
+
+<details class="card" id="assumptionsCard">
+  <summary id="aSummary">Допущения модели и приборов</summary>
+  <p class="section-intro" style="margin-top:8px">
+    Значения меняются только в памяти сервера и действуют до сброса или перезапуска; файлы конфигурации и кэш
+    не изменяются. Изменение порогов приборов и параметров ЛИМС требует пересчёта фильтра серы и рядов состояния
+    по всему периоду (10–30 с). Параметры калибровки (коэффициенты кинетики, полосы, динамика серы) в этом режиме
+    не пересчитываются — для них используется команда <code>python run.py calibrate</code>.
+  </p>
+  <div class="a-head">
+    <button id="aApply" disabled>Применить изменения</button>
+    <button class="secondary" id="aCancel" disabled>Отменить правки</button>
+    <button class="secondary" id="aResetAll" disabled>Сбросить все допущения</button>
+    <button class="secondary" id="aExport">Экспорт (JSON)</button>
+    <label class="btn">Импорт (JSON)<input type="file" id="aImport" accept="application/json" hidden></label>
+    <span id="aStatus" class="a-status"></span>
+  </div>
+  <div class="tabs" id="aTabs"></div>
+  <div class="a-strip" id="aStrip" style="display:none"></div>
+  <div id="aBody"></div>
+</details>
+
+<div class="grid2">
+  <div class="card">
+    <h3>1. Время и состояние</h3>
+    <div class="kv" id="block1"></div>
+  </div>
+  <div class="card">
+    <h3>2. Проблема / риск</h3>
+    <div class="kv" id="block2"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>3. Предлагаемое действие</h3>
+  <div id="block3"></div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h3>4. Ожидаемый эффект</h3>
+    <div class="kv" id="block4"></div>
+  </div>
+  <div class="card">
+    <h3>5. Проверка ограничений</h3>
+    <div id="block5"></div>
+  </div>
+</div>
+
+<div class="card" id="blendCard">
+  <div class="row" style="justify-content: space-between; margin-bottom: 8px;">
+    <h3 style="margin:0">8. Блендинг (сценарный расчёт)</h3>
+    <button class="secondary" id="blendSettings">Настроить блендинг</button>
+  </div>
+  <div id="block8"></div>
+</div>
+
+<div class="card">
+  <h3>Альтернативы</h3>
+  <div id="alternatives"></div>
+</div>
+
+<div class="card">
+  <h3>Журнал шины (этот цикл)</h3>
+  <div class="log-feed" id="busLog"></div>
+</div>
+
+<script>
+let playing = false;
+let timer = null;
+let currentT = null;
+let baseline = { T5: null, F9: null, F32: null };
+
+const fmt = (x, d = 2) => {
+  if (x === null || x === undefined || Number.isNaN(x)) return '-';
+  if (typeof x === 'number') return x.toFixed(d);
+  if (typeof x === 'boolean') return x ? 'да' : 'нет';
+  if (Array.isArray(x)) return x.map(v => fmt(v, d)).join(' / ');
+  if (typeof x === 'object') return Object.entries(x).map(([k, v]) => `${k}=${fmt(v, d)}`).join(', ');
+  return x;
+};
+const pct = (x) => (x === null || x === undefined) ? '-' : (x * 100).toFixed(0) + '%';
+const ORDER = {
+  '1. Время и состояние': ['время', 'ГО в работе', 'АВТ в работе', 'часов с пуска', 'T5', 'F9', 'F32',
+    'оценка серы', 'сигма серы', 'ПАК', 'Q21', 'возраст ЛИМС серы, ч'],
+  '2. Проблема / риск': ['риск', 'тяжесть режима', 'обнаружено', 'факторы надёжности', 'эскалации'],
+  '4. Ожидаемый эффект': ['сера центр/верх', 'P(S>10) c/без действия', 'T95 центр/верх',
+    'P(T95>360) c/без действия', 'выпуск, т/ч', 'тяжесть после',
+    'запаздывание эффекта', 'место в порядке предпочтения'],
+};
+function ordered(obj, orderKey) {
+  const order = ORDER[orderKey];
+  if (!order) return Object.entries(obj || {});
+  const keys = Object.keys(obj || {});
+  return order.filter(k => keys.includes(k)).map(k => [k, obj[k]])
+    .concat(keys.filter(k => !order.includes(k)).map(k => [k, obj[k]]));
+}
+
+async function fetchCycle(t, overrides) {
+  const params = new URLSearchParams({ t: t });
+  for (const k in overrides) if (overrides[k] !== null) params.set(k, overrides[k]);
+  const res = await fetch('/api/cycle?' + params.toString());
+  return res.json();
+}
+
+function statusClass(status) {
+  if (status.startsWith('БЕЗ ИЗМЕНЕНИЙ')) return 'status-none';
+  if (status.startsWith('НАБЛЮДЕНИЕ')) return 'status-observe';
+  if (status.startsWith('НАДЁЖНОЙ')) return 'status-refuse';
+  return 'status-action';
+}
+
+function renderKV(el, obj, orderKey) {
+  el.innerHTML = '';
+  for (const [k, v] of ordered(obj, orderKey)) {
+    const dk = document.createElement('div'); dk.textContent = k;
+    const dv = document.createElement('div');
+    dv.textContent = fmt(v);
+    el.append(dk, dv);
+  }
+}
+
+function renderBlock3(el, b3) {
+  if (typeof b3 === 'string' || !b3 || !b3.length) {
+    el.innerHTML = '<p>' + (b3 || 'Изменений не требуется') + '</p>';
+    return;
+  }
+  let html = '<table><tr><th>Тег</th><th>Описание</th><th>Текущее</th><th>Рекомендуемое</th><th>Δ</th></tr>';
+  for (const a of b3) {
+    html += `<tr><td>${a.tag}</td><td>${a.desc}</td><td>${fmt(a.current, 1)} ${a.unit}</td>` +
+            `<td>${fmt(a.recommended, 1)} ${a.unit}</td><td>${fmt(a.change, 2)}</td></tr>`;
+  }
+  el.innerHTML = html + '</table>';
+}
+
+function renderBlock5(el, b5) {
+  if (!b5 || !b5.length) { el.innerHTML = '-'; return; }
+  let html = '<table><tr><th>Проверка</th><th>Значение</th><th>Результат</th></tr>';
+  for (const c of b5) {
+    const ok = c.ok ? '<span class="ok-text">выполнено</span>' : '<span class="bad-text">нарушено</span>';
+    html += `<tr><td>${c.check}</td><td>${fmt(c.value)}</td><td>${ok}</td></tr>`;
+  }
+  el.innerHTML = html + '</table>';
+}
+
+const pctText = (x) => (Math.round(x * 1000) / 10).toString() + ' %';
+const recipeText = (parts) => (parts || []).filter((p) => p['доля'] > 0).map((p) => `${p['компонент']} ${pctText(p['доля'])}`).join('; ');
+
+function renderBlock8(el, b) {
+  if (!b || !Object.keys(b['доли'] || {}).length) {
+    el.innerHTML = '<p class="na-text">Расчёт блендинга не выполнялся: рекомендация не сформирована.</p>';
+    return;
+  }
+  const mode = b['режим'];
+  let html = `<div class="row"><span class="badge">режим: ${mode}</span>` +
+    `<span class="muted">вариантов: ${b['вариантов']}, допустимых: ${b['допустимых']}</span></div>`;
+  if (b['предупреждение']) html += `<div class="warn-banner" style="margin-top:8px">${b['предупреждение']}</div>`;
+  const src = b['источники свойств ГО ДТ'] || [];
+  if (mode !== 'product_only') {
+    const srcText = src.map((p) => `${p['свойство']}: ${p['источник']}`).join(', ');
+    html += `<div class="blend-note">Свойства ГО ДТ — ${srcText}. Свойства остальных компонентов и присадок — сценарные допущения ` +
+      `(вкладка «Блендинг» панели допущений).</div>`;
+  }
+  const hasBatch = (b['состав'] || []).some((p) => p['партия, т'] !== undefined);
+  html += `<div class="grid2"><div><table><tr><th>Компонент</th><th>Доля</th>${hasBatch ? '<th>Партия, т</th>' : ''}</tr>`;
+  for (const p of b['состав']) {
+    html += `<tr><td>${p['компонент']}</td><td><span class="share-bar" style="width:${Math.round(p['доля'] * 80)}px"></span>${pctText(p['доля'])}</td>` +
+      `${hasBatch ? `<td>${fmt(p['партия, т'], 1)}</td>` : ''}</tr>`;
+  }
+  for (const d of b['дозы'] || []) {
+    html += `<tr><td>${d['присадка']}</td><td>${fmt(d['доза, кг/т'], 2)} кг/т</td>${hasBatch ? '<td>-</td>' : ''}</tr>`;
+  }
+  html += '</table></div><div><table><tr><th>Показатель</th><th>Значение</th><th>Норма</th><th>Результат</th></tr>';
+  for (const c of b['проверки'] || []) {
+    const val = typeof c['значение'] === 'number' ? `${fmt(c['значение'], 2)} ${c['единицы']}` : c['значение'];
+    const res = c['значение'] === 'нет данных' ? '<span class="na-text">нет данных</span>'
+      : (c.ok ? '<span class="ok-text">выполнено</span>' : '<span class="bad-text">нарушено</span>');
+    html += `<tr><td>${c['показатель']}</td><td>${val}</td><td>${c['норма']} ${c['единицы']}</td><td>${res}</td></tr>`;
+  }
+  html += '</table></div></div>';
+  const alts = b['альтернативы'] || [];
+  if (alts.length) {
+    html += '<h3 style="margin-top:12px">Альтернативные рецептуры</h3><table><tr><th>Рецептура</th><th>Присадки, кг/т</th></tr>';
+    for (const a of alts) {
+      const adds = (a['дозы'] || []).filter((d) => d['доза, кг/т'] > 0).map((d) => `${d['присадка']} ${fmt(d['доза, кг/т'], 2)}`).join('; ') || '-';
+      html += `<tr><td>${recipeText(a['состав'])}</td><td>${adds}</td></tr>`;
+    }
+    html += '</table>';
+  }
+  el.innerHTML = html;
+}
+
+function renderAlternatives(el, alts) {
+  if (!alts || !alts.length) { el.innerHTML = 'Нет допустимых альтернатив.'; return; }
+  let html = '<table><tr><th>id</th><th>порядок (больше - предпочтительнее)</th><th>запас качества</th><th>примечание</th></tr>';
+  for (const a of alts) {
+    html += `<tr><td>${a.id}</td><td>${fmt(a.rating)}</td><td>${fmt(a.quality_margin)}</td><td>${a.note || ''}</td></tr>`;
+  }
+  el.innerHTML = html + '</table>';
+}
+
+function renderLog(el, log) {
+  el.innerHTML = (log || []).map(e =>
+    `<div>#${e.n} ${e.dir === 'запрос' ? '→' : '←'} <b>${e.sender}</b> → <b>${e.receiver}</b>.${e.topic}: ${e.summary}</div>`
+  ).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function render(data) {
+  document.getElementById('timeDisplay').textContent = data.t.replace('T', ' ').slice(0, 16);
+  const badge = document.getElementById('statusBadge');
+  badge.textContent = data.status;
+  badge.className = 'status-badge ' + statusClass(data.status);
+  document.getElementById('explanation').textContent = data.blocks['7. Объяснение'] || '';
+  renderKV(document.getElementById('block1'), data.blocks['1. Время и состояние'], '1. Время и состояние');
+  renderKV(document.getElementById('block2'), data.blocks['2. Проблема / риск'], '2. Проблема / риск');
+  renderBlock3(document.getElementById('block3'), data.blocks['3. Предлагаемое действие']);
+  renderKV(document.getElementById('block4'), data.blocks['4. Ожидаемый эффект'], '4. Ожидаемый эффект');
+  renderBlock5(document.getElementById('block5'), data.blocks['5. Проверка ограничений']);
+  renderBlock8(document.getElementById('block8'), data.blocks['8. Блендинг']);
+  renderAlternatives(document.getElementById('alternatives'), data.alternatives);
+  renderLog(document.getElementById('busLog'), data.bus_log);
+  document.getElementById('err').textContent = data.error || '';
+  if (window.onCycleRendered) window.onCycleRendered(data);
+}
+
+function currentOverrides() {
+  const dT5 = parseFloat(document.getElementById('dT5').value);
+  const dF9 = parseFloat(document.getElementById('dF9').value);
+  const dF32 = parseFloat(document.getElementById('dF32').value);
+  const active = dT5 !== 0 || dF9 !== 0 || dF32 !== 0;
+  document.getElementById('whatifBanner').style.display = active ? 'block' : 'none';
+  if (!active || baseline.T5 === null) return {};
+  return { T5: baseline.T5 + dT5, F9: baseline.F9 + dF9, F32: baseline.F32 + dF32 };
+}
+
+async function loadAt(t, keepOverrides) {
+  currentT = t;
+  const baselineData = await fetchCycle(t, {});
+  if (baselineData.error) { document.getElementById('err').textContent = baselineData.error; return; }
+  const b1 = baselineData.blocks['1. Время и состояние'];
+  baseline = { T5: b1['T5'], F9: b1['F9'], F32: b1['F32'] };
+  if (!keepOverrides) {
+    ['dT5', 'dF9', 'dF32'].forEach(id => {
+      document.getElementById(id).value = 0;
+      document.getElementById(id + 'val').textContent = '0';
+    });
+  }
+  const ov = currentOverrides();
+  const data = Object.keys(ov).length ? await fetchCycle(t, ov) : baselineData;
+  render(data);
+}
+
+function addHours(iso, h) {
+  const d = new Date(iso);
+  d.setHours(d.getHours() + h);
+  return d.toISOString().slice(0, 19);
+}
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  playing = !playing;
+  document.getElementById('playBtn').textContent = playing ? 'Пауза' : 'Воспроизвести';
+  if (playing) {
+    const speed = () => parseInt(document.getElementById('speed').value);
+    const tick = async () => {
+      if (!playing) return;
+      // заданные сценарные параметры сохраняются на протяжении всего воспроизведения (true)
+      await loadAt(addHours(currentT, 6), true);
+      timer = setTimeout(tick, speed());
+    };
+    tick();
+  } else {
+    clearTimeout(timer);
+  }
+});
+
+document.getElementById('jumpBtn').addEventListener('click', () => {
+  const v = document.getElementById('jumpTime').value;
+  if (v) loadAt(v, true);
+});
+
+['dT5', 'dF9', 'dF32'].forEach(id => {
+  document.getElementById(id).addEventListener('input', async (e) => {
+    document.getElementById(id + 'val').textContent = e.target.value;
+    const ov = currentOverrides();
+    render(Object.keys(ov).length ? await fetchCycle(currentT, ov) : await fetchCycle(currentT, {}));
+  });
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => loadAt(currentT, false));
+document.getElementById('blendSettings').addEventListener('click', () => window.openAssumptionsTab('Блендинг'));
+
+(async function init() {
+  const range = await fetch('/api/timerange').then(r => r.json());
+  const start = range.start + 'T08:00:00';
+  document.getElementById('jumpTime').value = start.slice(0, 16);
+  await loadAt(start, false);
+})();
+</script>
+<script src="/assumptions.js"></script>
+</body>
+</html>

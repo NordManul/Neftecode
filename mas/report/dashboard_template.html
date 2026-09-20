@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сводка результатов — система поддержки решений оператора</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1a; --muted: #666; --border: #e2e2e2;
+    --accent: #2563eb; --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161a; --card: #1e2126; --text: #eaeaea; --muted: #9aa0a6; --border: #2c3038; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+         font: 14px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 24px 0 8px; }
+  .sub { color: var(--muted); margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .stat { font-size: 24px; font-weight: 600; }
+  .stat-label { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .bar-track { flex: 1; background: var(--border); border-radius: 4px; height: 14px; overflow: hidden; min-width: 60px; }
+  .bar-fill { height: 100%; background: var(--accent); }
+  .bar-label { width: 220px; flex-shrink: 0; }
+  .bar-value { width: 56px; text-align: right; color: var(--muted); }
+  .assumptions { font-size: 12px; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; background: var(--border); }
+  @media (max-width: 480px) { .bar-label { width: 120px; font-size: 12px; } body { padding: 10px; } }
+</style>
+</head>
+<body>
+<h1>Мультиагентная система поддержки решений оператора: АВТ → гидроочистка → блендинг</h1>
+<div class="sub" id="generated"></div>
+
+<div class="grid" id="kpi"></div>
+
+<h2>Распределение статусов бэктеста</h2>
+<div id="status-bars"></div>
+
+<h2>Драйверы действий (доля рабочих циклов)</h2>
+<div id="driver-bars"></div>
+
+<h2>Сера: оценка перед анализом</h2>
+<div class="card"><table id="sulfur-table"></table></div>
+
+<h2>Причины отказа</h2>
+<div class="card"><table id="failure-table"></table></div>
+
+<h2>Аудит справочника тегов</h2>
+<div class="card"><table id="audit-table"></table></div>
+
+<h2>Допущения конфигурации и источники</h2>
+<div class="card assumptions"><table id="assumptions-table"></table></div>
+
+<script id="dashboard-data" type="application/json">/*__DATA__*/</script>
+<script>
+const data = JSON.parse(document.getElementById('dashboard-data').textContent);
+
+document.getElementById('generated').textContent = 'Дата расчёта: ' + data.calculated_at;
+
+function kpi(label, value) {
+  const d = document.createElement('div'); d.className = 'card';
+  d.innerHTML = `<div class="stat">${value}</div><div class="stat-label">${label}</div>`;
+  return d;
+}
+const kpiBox = document.getElementById('kpi');
+const bt = data.backtest || {};
+kpiBox.append(
+  kpi('Циклов бэктеста', bt.n_cycles ?? '-'),
+  kpi('Эскалаций, %', bt.escalation_share != null ? (bt.escalation_share * 100).toFixed(1) : '-'),
+  kpi('Медиана NIS (обучающий период)', data.median_nis ?? '-'),
+  kpi('Пригодных формул ВАК', data.vak_fit + ' / ' + data.vak_total),
+);
+
+function bars(container, obj, colorFn) {
+  const el = document.getElementById(container);
+  const entries = Object.entries(obj || {});
+  const max = Math.max(...entries.map(([, v]) => v), 1e-9);
+  entries.forEach(([k, v]) => {
+    const row = document.createElement('div'); row.className = 'bar-row';
+    const pct = (v * 100).toFixed(1);
+    row.innerHTML = `<div class="bar-label">${k}</div><div class="bar-track">
+      <div class="bar-fill" style="width:${Math.max(v / max * 100, 2)}%"></div></div><div class="bar-value">${pct}%</div>`;
+    el.appendChild(row);
+  });
+}
+bars('status-bars', bt.status_distribution);
+bars('driver-bars', bt.driver_share_of_working);
+
+function table(id, rows, cols) {
+  const el = document.getElementById(id);
+  const thead = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+  const trs = rows.map(r => '<tr>' + cols.map(c => `<td>${r[c] ?? '-'}</td>`).join('') + '</tr>').join('');
+  el.innerHTML = thead + trs;
+}
+table('sulfur-table', data.sulfur_estimators || [], ['name', 'mae', 'auc', 'n']);
+table('failure-table', data.failure_reasons || [], ['reason', 'count']);
+table('audit-table', data.tag_audit || [], ['tag', 'unit', 'verdict', 'problems']);
+const esc = (x) => String(x ?? '-').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const refLink = (r) => r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.short)}</a>` : `<span class="tag">${esc(r.short)}</span>`;
+document.getElementById('assumptions-table').innerHTML =
+  '<tr><th>Параметр</th><th>Значение</th><th>Тип</th><th>Источник</th><th>Примечание</th></tr>' +
+  (data.assumptions || []).map((r) => `<tr><td>${esc(r.path)}</td><td>${esc(r.value)}</td><td>${esc(r.src)}</td>` +
+    `<td>${(r.refs || []).map(refLink).join('; ')}</td><td>${esc(r.note)}</td></tr>`).join('');
+</script>
+</body>
+</html>

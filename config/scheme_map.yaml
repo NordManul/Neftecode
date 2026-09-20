@@ -1,0 +1,37 @@
+# Соответствие переменных технологических схем (АВТ_схемы.pdf, Ustanovka_AVT_merged.pdf) тегам данных пакета.
+# status: data - есть в данных и используется; data_monitor - есть, только контроль; proxy - косвенный тег;
+#         no_data - в пакете нет (учтено как допущение или не моделируется)
+avt:
+  crude_feed_rate_tph:        {tags: "F7+F8+F9", status: data_monitor, role: "загрузка АВТ (сумма ходов)"}
+  crude_density_kgm3:         {tags: D10, status: no_data, role: "тег неисправен (307/240), не используется"}
+  crude_sulfur_wt_pct:        {tags: "-", status: no_data, role: "лабораторный контроль сырой нефти в пакете отсутствует"}
+  crude_water_wt_pct:         {tags: "-", status: no_data, role: "нет данных"}
+  avt_furnace_outlet_temp_c:  {tags: "T6 (К-1), T33 (К-2), T55 (П-3)", status: data_monitor, role: "управляемые на схеме; связь с T95 ГО ДТ нестабильна - контроль в коридоре"}
+  avt_column_top_temp_c:      {tags: "T1 (К-1), T20 (К-2)", status: data_monitor, role: "контроль"}
+  avt_column_pressure_mpa_abs: {tags: "P2 (К-1), P22 (К-2), P50 (К-10)", status: data_monitor, role: "управляемые на схеме; контроль в коридоре"}
+  avt_diesel_flow_tph:        {tags: "F32 (фр.240-290), F30 (фр.290-350), F56 (К-10)", status: data, role: "F32 - управляющее воздействие (FC на схеме К-2)"}
+  avt_diesel_sulfur_mgkg:     {tags: "-", status: no_data, role: "ЛИМС АВТ серу не содержит"}
+  avt_diesel_density_kgm3:    {tags: "ЛИМС AVT2/AVT2.1/AVT3 D15", status: data_monitor, role: "контроль качества фракций"}
+  avt_diesel_t95_c:           {tags: "ЛИМС AVT2/AVT2.1/AVT3 95%.T", status: data_monitor, role: "контроль; T95 продукта ГО ≈ T95 сырья ГО − 5 °C"}
+  steam_t:                    {tags: "F5, F26-F29 (пар в колонны)", status: data_monitor, role: "F5, F26 неисправны (отрицательные)"}
+hydrotreating:
+  ht_feed_flow_m3h:           {tags: "F9 (т/ч); F26 ≈ F9/0.85", status: data, role: "управляющее воздействие (масса сырья; F15 справочника не подтверждён)"}
+  ht_sulfur_in_mgkg:          {tags: "ЛИМС ГО т.1 Mass.Sulfur; Q20", status: data_monitor, role: "Q20 не влияет на прогноз серы продукта (r≈0) - контроль"}
+  ht_nitrogen_in_mgkg:        {tags: "-", status: no_data, role: "нет данных"}
+  ht_gas_oil_ratio_m3m3:      {tags: "F2 / (F9/0.85)", status: data, role: "ограничение: не ниже p5 train при росте загрузки"}
+  ht_h2_purity_mol_pct:       {tags: "-", status: no_data, role: "нет данных; F25 - расход свежего ВСГ (контроль)"}
+  ht_inlet_temp_c:            {tags: "T5 (выход Р-201), T6 (вход Р-202)", status: proxy, role: "T5 - управляющее воздействие: вход Р-201 в тегах нет, T5 = вход + экзотерма"}
+  ht_bed_mean_temp_c:         {tags: "T5, T6, T11", status: proxy, role: "Treq (нормированная требуемая температура) по T5"}
+  ht_pressure_mpa:            {tags: "P13 (вход Р-202), P3 (С-201)", status: data_monitor, role: "контроль в коридоре"}
+  ht_delta_pressure_kpa:      {tags: "P8 (перепад Р-202, МПа)", status: data, role: "индекс засорения слоя в агенте надёжности"}
+  ht_sulfur_out_mgkg:         {tags: "ЛИМС ГО т.2 Mg.Sulfur; ПАК; Q21", status: data, role: "ключевой показатель: фильтр Калмана (2 анализатора + ЛИМС)"}
+blending:
+  blend_component_share_pct:  {tags: "-", status: no_data, role: "агент блендинга: по умолчанию 100 % ГО ДТ; данных других компонентов нет, сценарный режим работает по данным, внесённым пользователем"}
+  blend_share_sum_pct:        {tags: "-", status: data, role: "жёсткая проверка = 100 %"}
+  blend_component_stock_t:    {tags: "-", status: no_data, role: "данных нет; вносятся пользователем в blending (settings.yaml)"}
+  additive_type_and_dose_kg_t: {tags: "-", status: no_data, role: "данных нет; вносятся пользователем в blending (settings.yaml)"}
+  product_sulfur_mgkg:        {tags: "ЛИМС ГО т.2 Mg.Sulfur", status: data, role: "≤ 10 мг/кг - шанс-ограничение"}
+  product_density_kgm3:       {tags: "ЛИМС ГО т.2 D15; ПАК D15", status: data_monitor, role: "820-845 кг/м³ (ДТ с гидроочистки и летнее товарное), зимнее 800-845 (заказчик; ГОСТ 32511-2013)"}
+  product_cetane:             {tags: "ЛИМС ГО т.2 CetaneNumber", status: data_monitor, role: "для ДТ с гидроочистки не нормируется; товарное летнее не менее 51, зимнее не менее 49 (заказчик; ГОСТ 32511-2013)"}
+  product_t95_c:              {tags: "ЛИМС ГО т.2 95%.T", status: data, role: "≤ 360 °C - «не навреди» + эскалация"}
+  product_cfpp_c:             {tags: "ЛИМС ГО т.2 CFPP", status: data_monitor, role: "норма по ПТФ в материалах проекта не задана: наблюдается, не проверяется"}
