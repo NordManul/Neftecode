@@ -4,11 +4,42 @@
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
-from mas.common import CACHE_DIR, load_cfg
+from mas.common import CACHE_DIR, load_cfg, v
 from mas.models.catalyst import dp_index, treq_series
 from mas.models.kalman import kalman_sulfur
+
+
+def _causal_fusion_weight(state: pd.DataFrame, q21: pd.DataFrame, lims: pd.DataFrame,
+                          train_end: pd.Timestamp) -> float:
+    """Выбирает вес фильтра против очищенного Q21 только по train-анализам.
+
+    Оба ряда оцениваются строго до момента лабораторного анализа. Q21 добавляет
+    устойчивую краткосрочную информацию, а фильтр сохраняет задержки, пропуски и
+    неопределённость ансамбля.
+    """
+    targets = lims[(lims["point"] == "HT2") & (lims["parameter"] == "Mg.Sulfur")
+                   & (lims["time"] < train_end)].sort_values("time")
+    if targets.empty:
+        return 1.0
+    q = q21["raw"].where(q21["reason"] == "").rolling("1h", min_periods=1).mean()
+    times = targets["time"].to_numpy()
+
+    def align(series: pd.Series) -> np.ndarray:
+        idx = series.index.to_numpy()
+        pos = np.clip(np.searchsorted(idx, times, side="right") - 2, 0, len(idx) - 1)
+        return series.to_numpy()[pos]
+
+    filt, q_clean = align(state["S_hat"]), align(q)
+    y = targets["value"].to_numpy()
+    ok = np.isfinite(filt) & np.isfinite(q_clean) & np.isfinite(y)
+    if ok.sum() < 30:
+        return 1.0
+    weights = np.linspace(0.0, 1.0, 101)
+    errors = [np.abs(w * filt[ok] + (1.0 - w) * q_clean[ok] - y[ok]).mean() for w in weights]
+    return float(weights[int(np.argmin(errors))])
 
 
 def compute_state(cfg: dict, calib: dict, ho_vals: pd.DataFrame, running: pd.DataFrame, pak: pd.DataFrame,
@@ -16,6 +47,15 @@ def compute_state(cfg: dict, calib: dict, ho_vals: pd.DataFrame, running: pd.Dat
     """(состояние серы, априорные оценки перед ЛИМС, суточные ряды Treq) - расчёт без обращения к файлам."""
     ho_running = running["ho_running"]
     state, priors = kalman_sulfur({"pak": pak, "q21": q21}, lims, ho_running, calib["sulfur"])
+    fusion_weight = _causal_fusion_weight(
+        state, q21, lims, pd.Timestamp(cfg["periods"]["train_end"])
+    )
+    q21_clean = q21["raw"].where(q21["reason"] == "").rolling("1h", min_periods=1).mean()
+    q21_clean = q21_clean.reindex(state.index, method="ffill")
+    state["S_hat_filter"] = state["S_hat"]
+    fused = fusion_weight * state["S_hat"] + (1.0 - fusion_weight) * q21_clean
+    state["S_hat_fusion"] = fused.combine_first(state["S_hat"])
+    state["sulfur_fusion_weight"] = fusion_weight
 
     ho_running_1h = ho_running.resample("1h").max()
     p8_1h = ho_vals["P8"].where(ho_running).resample("1h").mean()

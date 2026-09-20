@@ -40,7 +40,8 @@ def build_dashboard() -> str:
 
     sulfur_estimators = [{"name": k, "mae": round(v_["mae"], 3) if v_["mae"] else None,
                           "auc": round(v_["auc"], 3) if v_["auc"] else None, "n": v_["n"]}
-                         for k, v_ in (val.get("sulfur", {}).get("estimators", {}) or {}).items()]
+                         for k, v_ in (val.get("sulfur", {}).get("estimators", {}) or {}).items()
+                         if isinstance(v_, dict)]
     failure_reasons = [{"reason": k, "count": v_} for k, v_ in (bt.get("failure_reasons", {}) or {}).items()]
     tag_audit_rows = (audit[audit["verdict"] == "противоречие"][["tag", "unit", "verdict", "problems"]]
                        .to_dict("records") if len(audit) else [])

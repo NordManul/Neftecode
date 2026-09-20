@@ -1,4 +1,4 @@
-"""CLI: prepare | calibrate | state | validate | vak | cycle | demo | backtest | docs | dashboard | all.
+"""CLI: smoke | submission-check | prepare | calibrate | state | validate | vak | cycle | demo | backtest | docs | dashboard | all.
 
 python run.py all --data <папка>   # полный воспроизводимый прогон
 Папку данных можно также задать переменной окружения NEFTEKOD_DATA.
@@ -80,6 +80,19 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
     build_dashboard()
     log.info("dashboard: outputs/dashboard.html записан")
 
+def cmd_smoke(args: argparse.Namespace) -> None:
+    from mas.evaluate.smoke import run_smoke
+    report = run_smoke()
+    log.info("smoke: %s; отчёт outputs/smoke/smoke_report.json", report["status"])
+
+def cmd_submission_check(args: argparse.Namespace) -> None:
+    from mas.evaluate.submission_check import check_submission
+    report = check_submission()
+    log.info("submission-check: %s; отчёт outputs/submission_check.json", report["status"])
+    if report["status"] != "PASS":
+        for item in report["missing"]:
+            log.warning("не хватает: %s", item)
+
 def cmd_all(args: argparse.Namespace) -> None:
     for fn in (cmd_prepare, cmd_calibrate, cmd_state, cmd_validate, cmd_vak, cmd_demo):
         fn(args)
@@ -100,6 +113,8 @@ def build_parser() -> argparse.ArgumentParser:
             extra(sp)
         sp.set_defaults(func=fn)
 
+    add("smoke", cmd_smoke)
+    add("submission-check", cmd_submission_check)
     add("prepare", cmd_prepare, needs_data=True)
     add("calibrate", cmd_calibrate, extra=lambda sp: sp.add_argument(
         "--global-search", dest="global_search", action="store_true",

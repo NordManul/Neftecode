@@ -1,4 +1,4 @@
-"""Сетка вариантов и порядок предпочтения: лексикографический, без весов и стоимостных показателей."""
+"""Сетка вариантов, многокритериальное ранжирование и энергетический proxy."""
 from __future__ import annotations
 
 import pandas as pd
@@ -38,8 +38,8 @@ def test_ranking_prefers_larger_output_then_smaller_change(agent, snap):
     reduced = table[table["rF9"] < 0]
     same_output = table[table["rF9"] == 0]
     assert same_output["rating"].min() > reduced["rating"].max()     # выпуск важнее размера изменения
-    within = same_output.sort_values(["moves", "id"])
-    assert within["rating"].is_monotonic_decreasing                    # при равном выпуске меньше изменение лучше
+    within = same_output.sort_values(["moves", "energy_proxy_mw", "id"])
+    assert within["rating"].is_monotonic_decreasing                    # размер изменения, затем энергия
 
 
 def test_output_change_uses_yield_from_config(agent, snap):
@@ -52,3 +52,9 @@ def test_moves_are_counted_in_grid_steps(agent, snap):
     table = agent._ranking(agent._build_table(snap), snap)
     row = table[(table["dT5"] == 2) & (table["rF9"] == -0.05) & (table["dF32"] == -5.0)].iloc[0]
     assert row["moves"] == pytest.approx(2 / 1 + 0.05 / 0.05 + 5.0 / 2.5)
+
+
+def test_energy_proxy_is_present_and_nonnegative(agent, snap):
+    table = agent._ranking(agent._build_table(snap), snap)
+    assert "energy_proxy_mw" in table
+    assert (table["energy_proxy_mw"] >= 0).all()

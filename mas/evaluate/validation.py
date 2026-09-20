@@ -68,9 +68,11 @@ def _sulfur_estimators(pak: pd.DataFrame, q21: pd.DataFrame, state: pd.DataFrame
     last_lims = pd.Series(lims_s["value"].to_numpy(), index=lims_s["available_at"].to_numpy()).shift(1).reindex(
         pak.index.union(lims_s["available_at"]), method="ffill").reindex(pak.index)  # предыдущий анализ, не сам
     out = {}
+    filter_series = state["S_hat_fusion"] if "S_hat_fusion" in state else state["S_hat"]
+    fusion_weight = float(state["sulfur_fusion_weight"].dropna().iloc[0]) if "sulfur_fusion_weight" in state else 1.0
     for name, series in (("ПАК как есть", pak["raw"]), ("ПАК, среднее за час, очищенный", pak_clean_h),
                           ("Q21, среднее за час, очищенный", q21_clean_h), ("Среднее двух приборов, очищенное", mean_two),
-                          ("Последний анализ ЛИМС", last_lims), ("Фильтр по двум приборам", state["S_hat"].shift(1))):
+                          ("Последний анализ ЛИМС", last_lims), ("Фильтр + Q21, fusion", filter_series.shift(1))):
         mae, auc, n = _mae_auc(series, lims_s)
         out[name] = {"mae": mae, "auc": auc, "n": n}
     return out
@@ -185,18 +187,26 @@ def validation_report() -> dict:
     running = pd.read_parquet(CACHE_DIR / "running.parquet")["ho_running"]
     lims = pd.read_parquet(CACHE_DIR / "lims.parquet")
     state = pd.read_parquet(CACHE_DIR / "state_sulfur.parquet")
+    state_eval = state.copy()
+    if "S_hat_fusion" in state_eval:
+        state_eval["S_hat"] = state_eval["S_hat_fusion"]
 
     lims_s = lims[(lims["point"] == "HT2") & (lims["parameter"] == "Mg.Sulfur") & (lims["time"] >= train_end)]
-    sulfur_metrics = _sulfur_estimators(pak, q21, state, lims_s)
+    sulfur_metrics = _sulfur_estimators(pak, q21, state_eval, lims_s)
     sulfur_metrics["Градиентный бустинг по режимным тегам"] = _gbm_regime_baseline(
         pd.read_parquet(CACHE_DIR / "ho.parquet"), pd.read_parquet(CACHE_DIR / "avt.parquet"),
         lims[(lims["point"] == "HT2") & (lims["parameter"] == "Mg.Sulfur")].sort_values("time"), train_end)
     sulfur_metrics["Фильтр только по ПАК"] = _sulfur_only_pak(pak, running, lims, calib)
     clim_rate = float((lims_s["value"] > 10).mean())
-    coverage, brier, brier_clim = _coverage_brier(state, lims_s, clim_rate, calib["sulfur"]["sigma_lims"])
+    coverage, brier, brier_clim = _coverage_brier(state_eval, lims_s, clim_rate, calib["sulfur"]["sigma_lims"])
 
     t95_metrics = _t95_metrics(train_end)
     forecast_metrics = _sulfur_forecast_metrics(train_end, calib["sulfur"]["sigma_lims"])
+    sulfur_metrics["fusion_weight_filter"] = (
+        float(state["sulfur_fusion_weight"].dropna().iloc[0])
+        if "sulfur_fusion_weight" in state and state["sulfur_fusion_weight"].notna().any()
+        else 1.0
+    )
     summary_txt = (f"сера n={len(lims_s)}, доля>10={clim_rate:.1%}, Brier={brier:.4f} (климатология {brier_clim:.4f}); "
                     f"T95 n={t95_metrics['n']}, AUC={t95_metrics['auc']:.3f}")
 

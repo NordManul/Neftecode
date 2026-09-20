@@ -139,6 +139,7 @@ class Orchestrator:
             "T95 центр/верх": (chosen["T95_mid"], chosen["T95_upper_worst"]),
             "P(T95>360) c/без действия": (chosen["P_t95"], qa.p_t95_exceed),
             "выпуск, т/ч": chosen["d_prod_tph"], "тяжесть после": chosen["severity_after"],
+            "тепловой proxy, МВт": chosen["energy_proxy_mw"],
             "запаздывание эффекта": "сера 2-8 ч, T95 4 ч", "место в порядке предпочтения": int(-chosen["rating"]) + 1}
         b5 = [] if chosen is None else [
             {"check": "сера <= 10", "value": chosen["S_upper_mix"], "ok": bool(chosen["q_ok_sulfur"])},

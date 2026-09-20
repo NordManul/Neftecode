@@ -117,6 +117,8 @@ def build_results_doc() -> str:
     if val:
         parts += ["### Сера: оценка перед анализом", "| Оценщик | MAE | AUC | n |", "|---|---|---|---|"]
         for name, m in val.get("sulfur", {}).get("estimators", {}).items():
+            if not isinstance(m, dict):
+                continue
             parts.append(f"| {name} | {_fmt(m['mae'])} | {_fmt(m['auc'])} | {m['n']} |")
         s = val["sulfur"]
         parts += ["", _dict_table({"Покрытие 90%-го интервала": s.get("coverage_90"), "Brier": s.get("brier"),
