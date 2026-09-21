@@ -22,10 +22,10 @@ _calib_cache: dict | None = None
 _refs_cache: dict | None = None
 
 def get_data_dir() -> Path:
-    """Папка с исходными файлами: --data аргумент прокидывается через env NEFTEKOD_DATA."""
-    raw = os.environ.get("NEFTEKOD_DATA")
+    """Папка с исходными файлами: --data (через env NEFTEKOD_DATA); если не указана - папка `data/` в корне репозитория."""
+    raw = os.environ.get("NEFTEKOD_DATA") or (str(ROOT / "data") if (ROOT / "data").is_dir() else None)
     if not raw:
-        raise FileNotFoundError("Не указана папка с данными: передайте --data <папка> или NEFTEKOD_DATA")
+        raise FileNotFoundError("Не указана папка с данными: передайте --data <папка>, задайте NEFTEKOD_DATA или создайте папку data/ в корне репозитория")
     p = Path(raw)
     if not p.is_dir():
         raise FileNotFoundError(f"Папка с данными не найдена: {p}")
