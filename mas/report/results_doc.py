@@ -34,6 +34,9 @@ _T95_LABELS = {
     "n": "анализов", "mae": "MAE, °C", "coverage_90": "покрытие 90%-го интервала", "auc": "AUC превышения 360 °C", "brier": "Brier",
     "brier_climatology": "Brier климатологии", "share_above_360": "доля анализов выше 360 °C",
     "rate_when_risky": "частота превышения при P > 5 %", "rate_when_safe": "частота превышения при P ≤ 5 %",
+    "n_above_action_threshold": "анализов с P > 1/2 (порог действия)",
+    "rate_above_action_threshold": "частота превышения при P > 1/2",
+    "mean_p_above_action_threshold": "средняя расчётная вероятность при P > 1/2",
 }
 
 
@@ -94,7 +97,7 @@ def build_results_doc() -> str:
         "Противоречия 24-2000": prep.get("ho_contradictions"), "Противоречия АВТ": prep.get("avt_contradictions"),
     }), ""]
 
-    sulfur_c, t95_c, risk_c = calib.get("sulfur", {}), calib.get("t95", {}), calib.get("risk", {})
+    sulfur_c, t95_c, risk_c = calib.get("sulfur", {}), calib.get("t95", {}), report.get("risk", {})
     parts += ["## 2. Калибровка", "### Фильтр серы", _dict_table({
         "mu, мг/кг": sulfur_c.get("mu"), "phi_s (медленная составляющая)": sulfur_c.get("phi_s"),
         "постоянная времени медленной составляющей, ч": report.get("sulfur", {}).get("tau_slow_h"),
@@ -105,12 +108,15 @@ def build_results_doc() -> str:
         "median NIS (train)": report.get("sulfur", {}).get("median_nis_train"),
         "корреляция ПАК/Q21": report.get("sulfur", {}).get("corr_pak_q21"),
         "анализов ЛИМС в критерии подбора": report.get("sulfur_fit", {}).get("n_targets"),
-    }), "", "### T95 и фоновый риск", _dict_table({
+    }), "", "### T95, доля превышений нормы и пусковой режим", _dict_table({
         "sigma лабораторного анализа T95, °C": t95_c.get("sigma"),
         "рост дисперсии старого анализа, °C²/сут": t95_c.get("drift"),
         "анализов T95 в обучающем периоде": report.get("t95", {}).get("n_train_analyses"),
-        "фон превышения нормы по сере (обучение)": risk_c.get("sulfur_background"),
-        "фон превышения нормы по T95 (обучение)": risk_c.get("t95_background"),
+        "доля анализов серы выше нормы в рабочем режиме (обучение)": risk_c.get("sulfur_background"),
+        "доля анализов T95 выше нормы в рабочем режиме (обучение)": risk_c.get("t95_background"),
+        "разброс уровня серы в рабочем режиме, мг/кг (предел неопределённости)": calib.get("uncertainty", {}).get("sulfur_level_sd"),
+        "постоянная релаксации серы после пуска, ч": report.get("startup", {}).get("tau_h"),
+        "длительность пускового режима, ч": calib.get("startup", {}).get("window_h"),
     }), ""]
 
     parts += ["## 3. Проверка на отложенном периоде", ""]
@@ -119,8 +125,25 @@ def build_results_doc() -> str:
         for name, m in val.get("sulfur", {}).get("estimators", {}).items():
             parts.append(f"| {name} | {_fmt(m['mae'])} | {_fmt(m['auc'])} | {m['n']} |")
         s = val["sulfur"]
+        alert = s.get("alert", {})
         parts += ["", _dict_table({"Покрытие 90%-го интервала": s.get("coverage_90"), "Brier": s.get("brier"),
-                                    "Brier климатологии": s.get("brier_climatology")}), ""]
+                                    "Brier климатологии": s.get("brier_climatology"),
+                                    "Сигнал о риске (вероятность превышения выше 1/2): доля анализов": alert.get("share_flagged"),
+                                    "Сигнал о риске: точность (доля подтверждённых превышений)": alert.get("precision"),
+                                    "Сигнал о риске: полнота (доля найденных превышений)": alert.get("recall")}), ""]
+        pc = s.get("probability_calibration")
+        if pc:
+            parts += ["### Калибровка вероятности превышения по сере (установившийся режим)",
+                      "| Расчётная вероятность | Анализов | Превышений | Наблюдаемая частота | Средняя расчётная |", "|---|---|---|---|---|"]
+            for b in pc["bins"]:
+                parts.append(f"| {_fmt(b['from'])} … {_fmt(b['to'])} | {b['n']} | {b['n_exceeded']} | {_fmt(b['frequency'])} | {_fmt(b['mean_p'])} |")
+            parts += ["", _dict_table({
+                "Допустимая расчётная вероятность (откалиброванная не выше допустимой)": pc.get("accepted_raw_level"),
+                "Частота превышений при расчётной вероятности не выше допустимой": pc["accepted"]["frequency"],
+                "Анализов / превышений при этом": f"{pc['accepted']['n']} / {pc['accepted']['n_exceeded']}",
+                "Частота превышений при расчётной вероятности не выше допустимой вероятности превышения (строгое правило)": pc["strict"]["frequency"],
+                "Анализов / превышений при этом (строгое правило)": f"{pc['strict']['n']} / {pc['strict']['n_exceeded']}",
+                "Brier расчётной вероятности": pc.get("brier_raw"), "Brier откалиброванной вероятности": pc.get("brier_calibrated")}), ""]
         if val.get("sulfur_forecast"):
             parts += ["### Прогноз серы на горизонт решения", _dict_table(_rename(val["sulfur_forecast"], _FORECAST_LABELS)), ""]
         parts += ["### Риск по T95", _dict_table(_rename(val.get("t95_risk", {}), _T95_LABELS)), ""]
@@ -130,6 +153,19 @@ def build_results_doc() -> str:
     parts += ["### Регламент ВАК", f"Сверок: {len(vak) if vak is not None else 0}; пригодных: "
               f"{int((vak['verdict'] == 'пригодна').sum()) if vak is not None else 0}.", ""]
 
+    effect = _load_json(OUTPUTS_DIR / "effect_check.json")
+    if effect:
+        parts += ["### Проверка модели отклика на ступенчатых изменениях (`python run.py effect`)",
+                  "| Рычаг | Анализатор | Период | Событий | Отклик | 90 %-й интервал | Члены ансамбля в интервале |", "|---|---|---|---|---|---|---|"]
+        for r in effect["natural_experiments"]["rows"]:
+            parts.append(f"| {r['lever']} | {r['source']} | {r['period']} | {r['n']} | {_fmt(r['beta'])} | {_fmt(r['lo'])} … {_fmt(r['hi'])} | {r['ensemble']} |")
+        d = effect["operator_concordance"]["difference"]
+        parts += ["", effect["natural_experiments"]["note"], "",
+                  "| Циклы | Циклов | Изменение T5, °C | Изменение загрузки F9, % |", "|---|---|---|---|"]
+        parts += [f"| {g['group']} | {g['n']} | {_fmt(g['d_t5_mean'])} | {_fmt(g['d_f9_mean_pct'])} |" for g in effect["operator_concordance"]["groups"]]
+        parts += ["", f"Разность изменения T5 {_fmt(d['d_t5'])} °C (90 %-й интервал {_fmt(d['d_t5_ci'][0])} … {_fmt(d['d_t5_ci'][1])}), "
+                  f"разность изменения ln F9 {_fmt(d['d_lnf9'])} ({_fmt(d['d_lnf9_ci'][0])} … {_fmt(d['d_lnf9_ci'][1])}). " + effect["operator_concordance"]["note"], ""]
+
     parts += ["## 4. Бэктест (2025-01-01 … 2026-08-08)", ""]
     if bt:
         parts += [f"Циклов: {bt.get('n_cycles')}. Эскалаций: {_fmt(bt.get('escalation_share'))}.", ""]
@@ -138,6 +174,14 @@ def build_results_doc() -> str:
         parts += [f"Эпизодов действий в месяц: {_fmt(bt.get('episodes_per_month'))}, "
                   f"медианная длина: {_fmt(bt.get('episode_median_length'))} цикл. (шаг цикла 6 ч).", ""]
         parts += ["### Причины отказа", _dict_table(bt.get("failure_reasons", {})), ""]
+        if bt.get("detection"):
+            parts += ["### Сигнал о риске по сере на циклах (расчётная вероятность превышения выше 1/2) и результат анализа ЛИМС",
+                      "Анализ отобран не раньше чем через указанное упреждение после цикла.", "",
+                      "| Упреждение, ч | Анализов | Доля с сигналом | Точность | Полнота | Доля сигналов с рекомендацией |", "|---|---|---|---|---|---|"]
+            for d in bt["detection"]:
+                parts.append(f"| {_fmt(d['lead_h'])} | {d['n_analyses']} | {_fmt(d['share_flagged'])} | {_fmt(d['precision'])} | "
+                             f"{_fmt(d['recall'])} | {_fmt(d['share_flagged_with_recommendation'])} |")
+            parts.append("")
 
     text = "\n".join(parts)
     (DOCS_DIR / "03_РЕЗУЛЬТАТЫ.md").write_text(text, encoding="utf-8")

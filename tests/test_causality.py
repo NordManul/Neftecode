@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from mas.common import CACHE_DIR, load_calib
+from mas.common import CACHE_DIR
 from mas.prepare.quality_flags import trailing_run_length
 
 

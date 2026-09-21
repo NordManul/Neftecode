@@ -1,4 +1,4 @@
-"""CLI: prepare | calibrate | state | validate | vak | cycle | demo | backtest | docs | dashboard | all.
+"""CLI: prepare | calibrate | state | validate | vak | cycle | demo | backtest | effect | holdout | docs | dashboard | all.
 
 python run.py all --data <папка>   # полный воспроизводимый прогон
 Папку данных можно также задать переменной окружения NEFTEKOD_DATA.
@@ -62,6 +62,11 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     _, summary = run_backtest(step_h=getattr(args, "step", 6))
     log.info("backtest: %s", summary)
 
+def cmd_effect(args: argparse.Namespace) -> None:
+    from mas.evaluate.effect_check import run_effect_check
+    report = run_effect_check()
+    log.info("effect: %d оценок отклика на ступенчатые изменения, файл outputs/effect_check.json", len(report["natural_experiments"]["rows"]))
+
 def cmd_holdout(args: argparse.Namespace) -> None:
     from mas.evaluate.internal_holdout import run_internal_holdout
     report = run_internal_holdout(split=args.split)
@@ -84,6 +89,7 @@ def cmd_all(args: argparse.Namespace) -> None:
     for fn in (cmd_prepare, cmd_calibrate, cmd_state, cmd_validate, cmd_vak, cmd_demo):
         fn(args)
     cmd_backtest(args)
+    cmd_effect(args)
     cmd_docs(args)
     cmd_dashboard(args)
 
@@ -113,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--blend-mode", dest="blend_mode", default=None)))
     add("demo", cmd_demo)
     add("backtest", cmd_backtest, extra=lambda sp: sp.add_argument("--step", type=int, default=6))
+    add("effect", cmd_effect)
     add("holdout", cmd_holdout, extra=lambda sp: sp.add_argument(
         "--split", default="2024-01-01",
         help="дата разделения обучающего периода: подбор фильтра серы до неё, проверка - после (долго, не входит в `all`)"))

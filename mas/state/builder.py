@@ -12,10 +12,10 @@ from mas.models.kalman import kalman_sulfur
 
 
 def compute_state(cfg: dict, calib: dict, ho_vals: pd.DataFrame, running: pd.DataFrame, pak: pd.DataFrame,
-                  q21: pd.DataFrame, lims: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """(состояние серы, априорные оценки перед ЛИМС, суточные ряды Treq) - расчёт без обращения к файлам."""
+                  q21: pd.DataFrame, lims: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(состояние серы, суточные ряды Treq) - расчёт без обращения к файлам."""
     ho_running = running["ho_running"]
-    state, priors = kalman_sulfur({"pak": pak, "q21": q21}, lims, ho_running, calib["sulfur"])
+    state, _ = kalman_sulfur({"pak": pak, "q21": q21}, lims, ho_running, calib["sulfur"])
 
     ho_running_1h = ho_running.resample("1h").max()
     p8_1h = ho_vals["P8"].where(ho_running).resample("1h").mean()
@@ -26,7 +26,7 @@ def compute_state(cfg: dict, calib: dict, ho_vals: pd.DataFrame, running: pd.Dat
     t5_1h = ho_vals["T5"].where(ho_running).resample("1h").mean()
     s_hat_1h = state["S_hat"].resample("1h").mean()
     # Причинность: `treq_7d` уже смещён на сутки внутри treq_series.
-    return state, priors, treq_series(t5_1h, feed_1h, s_hat_1h, ho_running_1h, calib, cfg)[["treq_7d"]]
+    return state, treq_series(t5_1h, feed_1h, s_hat_1h, ho_running_1h, calib, cfg)[["treq_7d"]]
 
 
 def build_state(calib: dict) -> None:
@@ -37,7 +37,6 @@ def build_state(calib: dict) -> None:
     q21 = pd.read_parquet(CACHE_DIR / "q21_sulfur.parquet")
     lims = pd.read_parquet(CACHE_DIR / "lims.parquet")
 
-    state, priors, daily = compute_state(cfg, calib, ho_vals, running, pak, q21, lims)
-    priors.to_parquet(CACHE_DIR / "kalman_priors.parquet")
+    state, daily = compute_state(cfg, calib, ho_vals, running, pak, q21, lims)
     state.to_parquet(CACHE_DIR / "state_sulfur.parquet")
     daily.to_parquet(CACHE_DIR / "state_treq.parquet")

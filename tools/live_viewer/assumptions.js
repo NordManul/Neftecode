@@ -1,4 +1,4 @@
-// Панель «Допущения модели и приборов»: просмотр, редактирование, сброс, экспорт и импорт значений.
+// Панель «Параметры модели и приборов»: просмотр, редактирование, сброс, экспорт и импорт значений.
 (function () {
   const SRC_TEXT = {
     GOST: 'норматив (ГОСТ)', REQUIREMENT: 'нормативное требование', TASK: 'требование ТЗ или уточнение заказчика',
@@ -108,9 +108,10 @@
     refs.append(document.createTextNode('Источник: '));
     (p.refs || []).forEach((r, i) => {
       if (i) refs.append(document.createTextNode('; '));
-      if (r.url) {
+      const href = r.url || ((r.file || '').startsWith('docs/') ? '/' + encodeURI(r.file) : '');
+      if (href) {
         const a = el('a', '', r.short);
-        a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; a.title = r.title;
+        a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.title = r.title;
         refs.append(a);
       } else {
         refs.append(el('span', 'ref-none', r.short));
@@ -179,7 +180,7 @@
     const n = Object.keys(model.overrides).length;
     $('assumptionsBanner').style.display = n ? 'block' : 'none';
     $('assumptionsCount').textContent = n;
-    $('aSummary').textContent = 'Допущения модели и приборов' + (n ? ` (изменено: ${n})` : '');
+    $('aSummary').textContent = 'Параметры модели и приборов' + (n ? ` (изменено: ${n})` : '');
   }
 
   // краткий результат блендинга над формой: эффект правок виден без прокрутки к карточке
@@ -285,5 +286,5 @@
     $('assumptionsCard').scrollIntoView({ behavior: 'smooth' });
   };
 
-  init().catch((e) => setStatus('Не удалось загрузить допущения: ' + e, 'error'));
+  init().catch((e) => setStatus('Не удалось загрузить параметры: ' + e, 'error'));
 })();

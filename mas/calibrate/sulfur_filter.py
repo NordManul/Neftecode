@@ -97,7 +97,7 @@ def to_params(z, shift: int, mu: float) -> dict:
     return {"mu": mu, "phi_s": z[1], "q_s": float(np.exp(z[0])), "q_b": float(np.exp(z[9])),
             "sigma_lims": float(np.exp(z[10])),
             "pak": {"phi_f": z[2], "q_f": float(np.exp(z[3])), "r": float(np.exp(z[4])), "delay": 0, "shift": int(shift)},
-            "q21": {"phi_f": z[5], "q_f": float(np.exp(z[6])), "r": float(np.exp(z[7])), "delay": int(round(z[8])), "shift": 0},
+            "q21": {"phi_f": z[5], "q_f": float(np.exp(z[6])), "r": float(np.exp(z[7])), "delay": int(round(z[8]))},
             "phi_fast": z[11], "q_fast": float(np.exp(z[12]))}
 
 

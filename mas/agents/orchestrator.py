@@ -16,7 +16,8 @@ from mas.agents.optimization_agent import OptimizationAgent
 from mas.agents.quality_agent import QualityAgent
 from mas.agents.reliability_agent import ReliabilityAgent
 from mas.bus import MessageBus
-from mas.common import OUTPUTS_DIR, action_threshold, load_cfg, to_jsonable, v
+from mas.common import (OUTPUTS_DIR, action_threshold, calibrated_probability, load_calib, load_cfg, max_sigma_for_decision,
+                        to_jsonable, v)
 from mas.contracts import ESCALATION_SUFFIX, STATUS_CORRECTIVE, STATUS_NO_ACTION, STATUS_NO_RELIABLE, STATUS_OBSERVE, Recommendation
 
 
@@ -46,24 +47,35 @@ class Orchestrator:
             status = STATUS_NO_ACTION if chosen["is_no_action"] else STATUS_CORRECTIVE
             return chosen, status, True, "риск по T95 выше порога действия"
 
-        p_s_base = no_action["P_exceed"] if no_action["feasible"] else qa.p_exceed_forecast
+        p_s_base = no_action["P_exceed"] if no_action["feasible"] else qa.p_exceed_now
         if (pd.notna(p_s_base) and p_s_base > trigger_s) or not no_action["r_ok"]:
             idx = feasible["rating"].idxmax()
             return table.loc[idx], STATUS_CORRECTIVE, False, "риск по сере выше порога действия либо режим вне границ надёжности"
 
-        watch = pd.notna(p_s_base) and risk_alpha < p_s_base <= trigger_s
+        watch = pd.notna(p_s_base) and calibrated_probability(load_calib(), p_s_base) > risk_alpha and p_s_base <= trigger_s
         return no_action, STATUS_NO_ACTION, False, ("риск в зоне наблюдения, контролировать следующий анализ" if watch
                                                      else "текущий режим допустим, риск ниже порога действия")
 
     def _explain(self, chosen, table, reason: str) -> str:
+        """Причина выбора и чем каждая из ближайших допустимых альтернатив уступает: порядок предпочтения - больший выпуск ГО ДТ,
+        затем меньший размер изменения режима (раздел 11 docs/02), риск по T95 не выше, чем у выбранного."""
+        feasible = table[table["feasible"]]
         parts = [f"Выбран вариант {chosen['id']} ({reason})."]
+        if chosen["d_prod_tph"] >= feasible["d_prod_tph"].max() - 1e-9:
+            parts.append(f"Из {len(feasible)} допустимых вариантов у него наибольший выпуск ГО ДТ ({chosen['d_prod_tph']:+.1f} т/ч к текущему) "
+                         f"при размере изменения режима {chosen['moves']:.0f} шаг. сетки.")
         alts = table[table["feasible"] & (table["id"] != chosen["id"])].sort_values("rating", ascending=False).head(3)
         for _, alt in alts.iterrows():
             why = []
+            gap = chosen["d_prod_tph"] - alt["d_prod_tph"]
+            if gap > 1e-9:
+                why.append(f"выпуск ниже на {gap:.1f} т/ч")
+            elif alt["moves"] > chosen["moves"] + 1e-9:
+                why.append(f"крупнее изменение режима ({alt['moves']:.0f} шаг. сетки против {chosen['moves']:.0f})")
             if alt["quality_margin"] < chosen["quality_margin"]:
-                why.append("меньший запас по качеству")
-            if alt["P_t95"] > chosen["P_t95"]:
-                why.append("выше риск по T95")
+                why.append("меньший запас по сере")
+            if alt["P_t95"] - chosen["P_t95"] >= 0.005:
+                why.append(f"выше риск по T95 ({alt['P_t95']:.0%} против {chosen['P_t95']:.0%})")
             parts.append(f"Альтернатива {alt['id']} не выбрана: {', '.join(why) or 'ниже в порядке предпочтения'}.")
         return " ".join(parts)
 
@@ -91,7 +103,7 @@ class Orchestrator:
         else:
             if not (chosen["S_mid"] <= s_limit and chosen["S_upper_mix"] <= s_limit):
                 return False, "сера по центральной или верхней оценке превышает норму"
-            if not chosen["P_exceed"] <= risk_alpha:
+            if not chosen["P_cal"] <= risk_alpha:
                 return False, "шанс-ограничение по сере не выполнено"
         if not (chosen["P_t95"] <= risk_alpha or chosen["P_t95"] <= qa.p_t95_exceed):
             return False, "риск по T95 хуже, чем без изменений"
@@ -104,7 +116,7 @@ class Orchestrator:
         # вероятностно выше (правило «не навреди») - здесь жёстко блокирует только сера.
         if not next(c["ok"] for c in row["checks"] if c["check"] == "S"):
             return False, "спецификация смеси по сере не выполнена"
-        if snap.critical() or snap.sulfur_state.get("S_sigma", 0) > v(self.cfg["sensor_fusion"]["max_sigma_for_decision"]):
+        if snap.critical() or snap.sulfur_state.get("S_sigma", 0) > max_sigma_for_decision(load_calib()):
             return False, "данных недостаточно для решения"
         return True, ""
 
@@ -125,6 +137,10 @@ class Orchestrator:
         b2 = {"риск": qa.risk if qa else None, "тяжесть режима": ra.severity_class if ra else None,
               "обнаружено": [i.message for i in snap.issues], "факторы надёжности": ra.factors if ra else [],
               "эскалации": escalations}
+        if qa is not None:
+            b2.update({"P(S>10) сейчас": qa.p_exceed_now, f"прогноз серы через {qa.horizon_h} ч, мг/кг": f"{qa.S_forecast:.1f} ± {qa.S_forecast_sigma:.1f}",
+                       f"P(S>10) через {qa.horizon_h} ч": qa.p_exceed_forecast,
+                       "T95 оценка, °C": f"{qa.t95_est:.0f} ± {qa.t95_sigma:.1f}", "P(T95>360) сейчас": qa.p_t95_exceed})
         if chosen is None or bool(chosen.get("is_no_action", True)):
             b3 = "Изменений не требуется"
         else:
@@ -135,14 +151,16 @@ class Orchestrator:
                   for tg, d, u, c, n in specs if abs(n - c) > 1e-6]
         b4 = {} if chosen is None else {
             "сера центр/верх": (chosen["S_mid"], chosen["S_upper_mix"]),
-            "P(S>10) c/без действия": (chosen["P_exceed"], qa.p_exceed_forecast),
+            "P(S>10) c/без действия": (chosen["P_exceed"], qa.p_exceed_now),
+            "P(S>10) при самом слабом отклике": chosen["P_exceed_worst"],
             "T95 центр/верх": (chosen["T95_mid"], chosen["T95_upper_worst"]),
             "P(T95>360) c/без действия": (chosen["P_t95"], qa.p_t95_exceed),
-            "выпуск, т/ч": chosen["d_prod_tph"], "тяжесть после": chosen["severity_after"],
+            "выпуск, т/ч": chosen["d_prod_tph"], "энергозатраты": "не оцениваются: нет теплоёмкости потока и температуры на входе в печь",
+            "тяжесть после": chosen["severity_after"],
             "запаздывание эффекта": "сера 2-8 ч, T95 4 ч", "место в порядке предпочтения": int(-chosen["rating"]) + 1}
         b5 = [] if chosen is None else [
             {"check": "сера <= 10", "value": chosen["S_upper_mix"], "ok": bool(chosen["q_ok_sulfur"])},
-            {"check": "шанс-ограничение", "value": chosen["P_exceed"], "ok": bool(chosen["q_ok_sulfur"])},
+            {"check": "шанс-ограничение (откалиброванная вероятность)", "value": chosen["P_cal"], "ok": bool(chosen["q_ok_sulfur"])},
             {"check": "T95 не навреди", "value": chosen["P_t95"], "ok": bool(chosen["q_ok_t95"])},
             {"check": "границы контролируемых параметров", "value": None, "ok": bool(chosen["r_ok"])}]
         b6 = {"метка": "-", "балл": None, "предупреждения": []} if qa is None else \
@@ -191,7 +209,7 @@ class Orchestrator:
         qa = b.request("Orchestrator", "QualityAgent", "assess", snap)
         ra = b.request("Orchestrator", "ReliabilityAgent", "assess", snap)
 
-        crit, max_sigma = snap.critical(), v(self.cfg["sensor_fusion"]["max_sigma_for_decision"])
+        crit, max_sigma = snap.critical(), max_sigma_for_decision(load_calib())
         if crit or snap.sulfur_state.get("S_sigma", 0) > max_sigma:
             reasons = [i.message for i in crit] or [f"Неопределённость серы σ={snap.sulfur_state.get('S_sigma', 0):.2f} выше порога."]
             startup_or_transient = bool(crit) and all(i.tag in ("hours_since_start", "T5") for i in crit)

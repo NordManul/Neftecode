@@ -7,17 +7,19 @@
 <style>
   :root {
     --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1a; --muted: #666; --border: #e2e2e2;
-    --accent: #2563eb; --ok: #16a34a; --warn: #d97706; --bad: #dc2626; --gray: #6b7280;
+    --accent: #1f6feb; --ok: #1a7f4b; --warn: #b7791f; --bad: #c62828; --gray: #6b7280;
+    --hero-a: #0f2a4a; --hero-b: #1f6feb; --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 14px rgba(16, 24, 40, .05);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #14161a; --card: #1e2126; --text: #eaeaea; --muted: #9aa0a6; --border: #2c3038; }
+    :root { --bg: #0e1116; --card: #161b22; --text: #e6eaf0; --muted: #97a3b1; --border: #262d37; --accent: #58a6ff; --ok: #3fb27f; --warn: #e3a53c; --bad: #f06a6a; --hero-a: #0b1220; --hero-b: #1b4b91; --shadow: 0 1px 2px rgba(0, 0, 0, .4); }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
-         font: 14px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; }
+  body { margin: 0 auto; padding: 0 16px 24px; max-width: 1280px; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  html { background: var(--bg); }
   h1 { font-size: 18px; margin: 0 0 12px; }
   h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: var(--shadow); }
   .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
@@ -102,11 +104,23 @@
   .a-refs a { color: var(--accent); }
   .ref-none { color: var(--warn); }
   @media (max-width: 900px) { .a-row { grid-template-columns: 1fr; } }
+  .app-bar { margin: 0 -16px 16px; padding: 20px 16px 16px; color: #fff; background: linear-gradient(120deg, var(--hero-a), var(--hero-b));
+             display: flex; justify-content: space-between; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap; }
+  .app-title { font-size: 20px; font-weight: 650; letter-spacing: -.01em; line-height: 1.25; } .app-sub { font-size: 13px; opacity: .85; margin-top: 2px; }
+  .app-links { display: flex; gap: 6px; flex-wrap: wrap; } .app-links a { color: #fff; text-decoration: none; font-size: 13px; padding: 6px 12px; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; }
+  .app-links a:hover { background: rgba(255,255,255,.14); }
+  .howto { font-size: 13px; color: var(--muted); margin: 0 0 12px; } .howto b { color: var(--text); font-weight: 600; }
 </style>
 </head>
 <body>
-<h1>Мультиагентная система поддержки решений оператора</h1>
-<p class="section-intro" style="margin-top:-8px">Интерактивное воспроизведение по данным отложенного периода</p>
+<header class="app-bar">
+  <div><div class="app-title">Мультиагентная система поддержки решений оператора</div>
+  <div class="app-sub">Интерактивное воспроизведение по данным отложенного периода: АВТ, гидроочистка, блендинг</div></div>
+  <nav class="app-links"><a href="/dashboard">Сводка результатов</a><a href="/docs/00_СОСТАВ_СИСТЕМЫ.md">Состав системы</a>
+  <a href="/docs/02_ОБОСНОВАНИЕ.md">Обоснование</a><a href="/README.md">README</a></nav>
+</header>
+<p class="howto"><b>Как пользоваться.</b> «Воспроизвести» запускает время с шагом 6 ч, карточка оператора пересчитывается на каждый момент.
+Ползунки ΔT5, ΔF9 и ΔF32 задают сценарные значения управляющих воздействий. «Параметры» открывает допущения модели с источниками: изменения действуют только в памяти сервера.</p>
 
 <div class="card row" style="justify-content: space-between;">
   <div class="row">
@@ -123,7 +137,7 @@
   <div class="row">
     <input type="datetime-local" id="jumpTime" step="3600">
     <button class="secondary" id="jumpBtn">Перейти</button>
-    <button class="secondary" id="openAssumptions">Допущения</button>
+    <button class="secondary" id="openAssumptions">Параметры</button>
   </div>
 </div>
 
@@ -135,7 +149,7 @@
 </div>
 
 <div class="warn-banner" id="assumptionsBanner" style="display:none">
-  Действуют изменённые допущения: <b id="assumptionsCount">0</b>. Расчёт отличается от базового и не является
+  Действуют изменённые параметры: <b id="assumptionsCount">0</b>. Расчёт отличается от базового и не является
   рекомендацией для фактического режима.
   <button class="secondary" id="bannerOpen" style="margin-left:8px">Открыть</button>
   <button class="secondary" id="bannerReset">Сбросить все</button>
@@ -193,7 +207,7 @@
 </div>
 
 <details class="card" id="assumptionsCard">
-  <summary id="aSummary">Допущения модели и приборов</summary>
+  <summary id="aSummary">Параметры модели и приборов</summary>
   <p class="section-intro" style="margin-top:8px">
     Значения меняются только в памяти сервера и действуют до сброса или перезапуска; файлы конфигурации и кэш
     не изменяются. Изменение порогов приборов и параметров ЛИМС требует пересчёта фильтра серы и рядов состояния
@@ -203,7 +217,7 @@
   <div class="a-head">
     <button id="aApply" disabled>Применить изменения</button>
     <button class="secondary" id="aCancel" disabled>Отменить правки</button>
-    <button class="secondary" id="aResetAll" disabled>Сбросить все допущения</button>
+    <button class="secondary" id="aResetAll" disabled>Сбросить все параметры</button>
     <button class="secondary" id="aExport">Экспорт (JSON)</button>
     <label class="btn">Импорт (JSON)<input type="file" id="aImport" accept="application/json" hidden></label>
     <span id="aStatus" class="a-status"></span>
@@ -278,7 +292,7 @@ const ORDER = {
     'оценка серы', 'сигма серы', 'ПАК', 'Q21', 'возраст ЛИМС серы, ч'],
   '2. Проблема / риск': ['риск', 'тяжесть режима', 'обнаружено', 'факторы надёжности', 'эскалации'],
   '4. Ожидаемый эффект': ['сера центр/верх', 'P(S>10) c/без действия', 'T95 центр/верх',
-    'P(T95>360) c/без действия', 'выпуск, т/ч', 'тяжесть после',
+    'P(T95>360) c/без действия', 'выпуск, т/ч', 'энергозатраты', 'тяжесть после',
     'запаздывание эффекта', 'место в порядке предпочтения'],
 };
 function ordered(obj, orderKey) {
@@ -308,7 +322,7 @@ function renderKV(el, obj, orderKey) {
   for (const [k, v] of ordered(obj, orderKey)) {
     const dk = document.createElement('div'); dk.textContent = k;
     const dv = document.createElement('div');
-    dv.textContent = fmt(v);
+    dv.textContent = k.startsWith('P(') ? (Array.isArray(v) ? v.map(pct).join(' / ') : pct(v)) : fmt(v);
     el.append(dk, dv);
   }
 }
@@ -351,8 +365,8 @@ function renderBlock8(el, b) {
   const src = b['источники свойств ГО ДТ'] || [];
   if (mode !== 'product_only') {
     const srcText = src.map((p) => `${p['свойство']}: ${p['источник']}`).join(', ');
-    html += `<div class="blend-note">Свойства ГО ДТ — ${srcText}. Свойства остальных компонентов и присадок — сценарные допущения ` +
-      `(вкладка «Блендинг» панели допущений).</div>`;
+    html += `<div class="blend-note">Свойства ГО ДТ — ${srcText}. Свойства остальных компонентов и присадок — данные, внесённые пользователем ` +
+      `(вкладка «Блендинг» панели параметров).</div>`;
   }
   const hasBatch = (b['состав'] || []).some((p) => p['партия, т'] !== undefined);
   html += `<div class="grid2"><div><table><tr><th>Компонент</th><th>Доля</th>${hasBatch ? '<th>Партия, т</th>' : ''}</tr>`;

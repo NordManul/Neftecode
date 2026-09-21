@@ -1,7 +1,7 @@
-"""Чтение выгрузки ПАК: поточные анализаторы серы и плотности.
+"""Чтение выгрузки ПАК: поточный анализатор серы («24-2000:Mg.Sulfur»).
 
-Формат листа: пары колонок [время, значение] для «24-2000:Mg.Sulfur» и «24-2000:D15»,
-разделённые пустой колонкой; строки 0-1 - заголовок и единица, данные с строки 2.
+Формат листа: пары колонок [время, значение], разделённые пустой колонкой; строки 0-1 - заголовок и единица, данные с строки 2.
+Расчётная плотность D15 из выгрузки (вторая пара колонок) не читается: плотность продукта проверяется по анализам ЛИМС.
 """
 from __future__ import annotations
 
@@ -28,10 +28,7 @@ def _pair_to_series(raw: pd.DataFrame, col_time: int, col_value: int) -> pd.Seri
     return s.sort_index()
 
 
-def read_pak() -> dict[str, pd.Series]:
-    """Возвращает {"sulfur_ppm": Series, "d15": Series}, индекс - время анализа."""
-    raw = pd.read_excel(_find_file(), header=None, skiprows=2, engine="openpyxl")
-    return {
-        "sulfur_ppm": _pair_to_series(raw, 0, 1),
-        "d15": _pair_to_series(raw, 3, 4),
-    }
+def read_pak() -> pd.Series:
+    """Показания анализатора серы, мг/кг, индекс - время анализа."""
+    raw = pd.read_excel(_find_file(), header=None, skiprows=2, engine="openpyxl", usecols=[0, 1])
+    return _pair_to_series(raw, 0, 1)

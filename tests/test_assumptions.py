@@ -49,7 +49,7 @@ def test_invalid_values_are_rejected(session):
 
 def test_instant_parameter_changes_card_and_reset_restores_it(session):
     base = _card(session)
-    assert session.apply({"process/ht_yield": 0.9, "sensor_fusion/max_sigma_for_decision": 0.2})["recomputed"] is False
+    assert session.apply({"process/ht_yield": 0.9, "uncertainty/sulfur_level_sd": 0.2})["recomputed"] is False
     changed = _card(session)
     assert changed != base
     assert load_cfg()["process"]["ht_yield"]["value"] == 0.9

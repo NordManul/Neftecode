@@ -37,7 +37,7 @@ def test_start_point_is_within_bounds_and_maps_to_filter_parameters():
     z, shift = F.load_start()
     assert all(lo <= x <= hi for x, (lo, hi) in zip(z, F.BOUNDS)) and F.SHIFT_BOUNDS[0] <= shift <= F.SHIFT_BOUNDS[1]
     params = F.to_params(z, shift, mu=8.0)
-    assert params["pak"]["shift"] == shift and params["q21"]["shift"] == 0
+    assert params["pak"]["shift"] == shift and "shift" not in params["q21"]
     assert 0 < params["phi_s"] < 1 and params["sigma_lims"] > 0 and isinstance(params["q21"]["delay"], int)
 
 

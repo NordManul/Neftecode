@@ -71,12 +71,19 @@ def v(node: Any) -> Any:
     return node["value"] if isinstance(node, dict) and "value" in node else node
 
 
-def action_threshold(cfg: dict, kind: str) -> float:
-    """Порог запуска корректирующего действия: не ниже допустимой вероятности `spec.risk_alpha` и не ниже фоновой
-    вероятности превышения нормы (`kind` = sulfur | t95; доля анализов выше нормы в рабочем режиме обучающего периода,
-    `calibrated.json`): риск, обычный для установки, действием не устраняется, реакция нужна на его рост."""
-    background = load_calib().get("risk", {}).get(f"{kind}_background", 0.0)
-    return float(max(v(cfg["spec"]["risk_alpha"]), background))
+NEUTRAL_RISK = 0.5
+
+
+def action_threshold(cfg: dict | None = None, kind: str | None = None) -> float:
+    """Порог запуска корректирующего действия: вероятность 1/2.
+
+    Действие снижает загрузку и потому уменьшает выпуск. Стоимостных данных, по которым можно сопоставить потерю выпуска с
+    ущербом от превышения нормы, нет, поэтому применяется нейтральная граница решения: действие назначается, когда
+    превышение нормы вероятнее, чем соблюдение (вероятность выше 1/2). Оценка вероятности откалибрована по данным
+    (Brier ниже климатологии, docs/03), поэтому вероятность 1/2 означает, что превышение ожидается примерно в каждом втором
+    таком случае. Пока вероятность ниже порога, режим без изменений допустим; выбранное действие обязано вернуть риск к
+    допустимой вероятности `spec.risk_alpha`."""
+    return NEUTRAL_RISK
 
 
 def load_thresholds() -> dict:
@@ -94,6 +101,27 @@ def startup_window_h(calib: dict) -> float:
 def lims_age_limit_h(calib: dict, point: str, param: str) -> float:
     """Предельный возраст анализа ЛИМС, ч: три медианных интервала между анализами в обучающем периоде."""
     return float(calib["lims_age_limit_h"][f"{point}:{param}"])
+
+
+def calibrated_probability(calib: dict, p: Any) -> np.ndarray:
+    """Расчётная вероятность превышения нормы по сере, приведённая к наблюдаемой частоте превышений: монотонное отображение,
+    подобранное по анализам ЛИМС обучающего периода (`calibrated.json`, раздел `probability`, `mas/calibrate/probability.py`).
+    Расчётная вероятность ниже примерно 0.15 не отличает состояния друг от друга: наблюдаемая частота там 2-3 % при любом
+    значении, поэтому допустимость действия оценивается по отображённой вероятности."""
+    m = calib["probability"]
+    return np.interp(np.asarray(p, dtype=float), m["raw"], m["calibrated"])
+
+
+def accepted_raw_probability(calib: dict, alpha: float) -> float:
+    """Наибольшая расчётная вероятность превышения, при которой откалиброванная вероятность не выше `alpha`."""
+    grid = np.linspace(0.0, 1.0, 10001)
+    return float(grid[calibrated_probability(calib, grid) <= alpha].max())
+
+
+def max_sigma_for_decision(calib: dict) -> float:
+    """Предельная неопределённость оценки серы, мг/кг: разброс уровня серы в рабочем режиме обучающего периода
+    (`calibrated.json`, `uncertainty.sulfur_level_sd`). Оценка неопределённее этого разброса не информативнее климатологии."""
+    return float(calib["uncertainty"]["sulfur_level_sd"])
 
 
 def commercial_norms(cfg: dict) -> dict:

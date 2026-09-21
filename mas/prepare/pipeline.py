@@ -54,7 +54,7 @@ def run_prepare() -> dict:
     avt_running, ho_running = running_flags(avt_vals, ho_vals, thresholds)
 
     pak = read_pak()
-    pak_sulfur = clean_analyzer(pak["sulfur_ppm"], tuple(v(cfg["data_quality"]["pak_sulfur_valid"])))
+    pak_sulfur = clean_analyzer(pak, tuple(v(cfg["data_quality"]["pak_sulfur_valid"])))
     q21_sulfur = clean_analyzer(ho_vals["Q21"], tuple(v(cfg["data_quality"]["q21_sulfur_valid"])))
 
     lims_long, units_meta, n_non_numeric = read_lims()
@@ -75,7 +75,6 @@ def run_prepare() -> dict:
     }).to_parquet(CACHE_DIR / "running.parquet")
     pak_sulfur.to_parquet(CACHE_DIR / "pak_sulfur.parquet")
     q21_sulfur.to_parquet(CACHE_DIR / "q21_sulfur.parquet")
-    pak["d15"].to_frame("d15").to_parquet(CACHE_DIR / "pak_d15.parquet")
     lims_clean_df.to_parquet(CACHE_DIR / "lims.parquet")
 
     lims_rejected.to_csv(report_dir / "lims_rejected.csv", index=False)
@@ -88,7 +87,7 @@ def run_prepare() -> dict:
         "telemetry_rows": int(len(avt_vals)),
         "lims_records_raw": int(len(lims_long)), "lims_records_clean": int(len(lims_clean_df)),
         "lims_rejected": int(len(lims_rejected)), "lims_non_numeric": int(n_non_numeric),
-        "pak_sulfur_n": int(len(pak["sulfur_ppm"])), "pak_d15_n": int(len(pak["d15"])),
+        "pak_sulfur_n": int(len(pak)),
         "pak_freeze_points": int((pak_sulfur.reason == "заморозка").sum()),
         "code307_cells": int((avt_flags == 1).sum().sum() + (ho_flags == 1).sum().sum()),
         "tag_dictionary_version": dict_version, "vak_formulas_version": vak_version,

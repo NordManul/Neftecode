@@ -14,7 +14,8 @@ from scipy.stats import norm
 from mas.agents.data_agent import DataAgent
 from mas.agents.quality_agent import QualityAgent
 from mas.bus import MessageBus
-from mas.common import CACHE_DIR, OUTPUTS_DIR, load_calib, load_cfg, to_jsonable, v
+from mas.common import (CACHE_DIR, OUTPUTS_DIR, accepted_raw_probability, action_threshold, calibrated_probability, load_calib,
+                        load_cfg, startup_window_h, to_jsonable, v)
 from mas.models.kalman import kalman_sulfur
 from mas.models.vak import evaluate_vak
 
@@ -85,7 +86,7 @@ def _sulfur_only_pak(pak: pd.DataFrame, running: pd.Series, lims: pd.DataFrame, 
 
 
 def _coverage_brier(state: pd.DataFrame, lims_s: pd.DataFrame, climatology_rate: float, sigma_lims: float
-                     ) -> tuple[float, float, float]:
+                     ) -> tuple[float, float, float, dict]:
     """Сравнение идёт с шумной лабораторной меткой, поэтому к P00 добавляется σ_ЛИМС² - та же
     дисперсия инновации, что фильтр использует при собственном обновлении по ЛИМС."""
     idx = state.index.to_numpy()
@@ -98,7 +99,42 @@ def _coverage_brier(state: pd.DataFrame, lims_s: pd.DataFrame, climatology_rate:
     p_exceed = 1 - norm.cdf((10 - s_hat) / s_sigma)
     brier = float(np.mean((p_exceed - (y > 10)) ** 2))
     brier_clim = float(np.mean((climatology_rate - (y > 10)) ** 2))
-    return coverage, brier, brier_clim
+    # сигнал системы о риске: вероятность превышения физической серы (без погрешности лаборатории) выше порога действия
+    p_decision = 1 - norm.cdf((10 - s_hat) / state["S_sigma"].to_numpy()[pos])
+    flagged, exceeded = p_decision > action_threshold(), y > 10
+    alert = {"share_flagged": float(flagged.mean()), "recall": float(flagged[exceeded].mean()) if exceeded.any() else float("nan"),
+             "precision": float(exceeded[flagged].mean()) if flagged.any() else float("nan"), "n_flagged": int(flagged.sum()),
+             "n_exceeded": int(exceeded.sum())}
+    return coverage, brier, brier_clim, alert
+
+
+PROBABILITY_BINS = (0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7, 1.0)
+
+
+def _probability_calibration(state: pd.DataFrame, lims_s: pd.DataFrame, running: pd.DataFrame, calib: dict) -> dict:
+    """Наблюдаемая частота превышений нормы по анализам отложенного периода (установившийся режим) в интервалах расчётной
+    вероятности фильтра и для двух правил допустимости действия: расчётная вероятность не выше `risk_alpha` (строгое правило) и
+    откалиброванная вероятность не выше `risk_alpha` (принятое правило)."""
+    limit, alpha = v(load_cfg()["spec"]["sulfur_max_mgkg"]), v(load_cfg()["spec"]["risk_alpha"])
+    idx = state.index.to_numpy()
+    pos = np.clip(np.searchsorted(idx, lims_s["time"].to_numpy(), side="right") - 2, 0, len(idx) - 1)      # до самого анализа
+    steady = (running["ho_running"] & (running["ho_hours_since_start"] > startup_window_h(calib))).reindex(state.index).fillna(False).to_numpy()[pos]
+    p = 1 - norm.cdf((limit - state["S_hat"].to_numpy()[pos]) / state["S_sigma"].to_numpy()[pos])
+    y = (lims_s["value"].to_numpy() > limit)
+    keep = steady & np.isfinite(p)
+    p, y = p[keep], y[keep]
+
+    def group(mask: np.ndarray) -> dict:
+        return {"n": int(mask.sum()), "n_exceeded": int(y[mask].sum()), "frequency": float(y[mask].mean()) if mask.any() else float("nan"),
+                "mean_p": float(p[mask].mean()) if mask.any() else float("nan")}
+
+    bins = [{"from": lo, "to": hi, **group((p > lo) & (p <= hi) if lo > 0 else (p <= hi))}
+            for lo, hi in zip(PROBABILITY_BINS[:-1], PROBABILITY_BINS[1:])]
+    level = accepted_raw_probability(calib, alpha)
+    return {"n": int(keep.sum()), "bins": bins, "accepted_raw_level": level,
+            "accepted": group(p <= level), "strict": group(p <= alpha),
+            "brier_calibrated": float(np.mean((calibrated_probability(calib, p) - y) ** 2)),
+            "brier_raw": float(np.mean((p - y) ** 2))}
 
 
 def _auc(score: np.ndarray, label: np.ndarray) -> float:
@@ -169,12 +205,16 @@ def _t95_metrics(train_end: pd.Timestamp) -> dict:
     coverage = float(np.mean((actual[ok] >= lo) & (actual[ok] <= hi)))
     brier = float(np.mean((1 - norm.cdf((360 - est[ok]) / total) - y) ** 2))
     brier_clim = float(np.mean((y.mean() - y) ** 2))
-    risky = p_exceed > 0.05
+    risky = p_exceed > v(load_cfg()["spec"]["risk_alpha"])          # риск выше допустимой вероятности
     rate_risky = float(y[risky].mean()) if risky.any() else float("nan")
     rate_safe = float(y[~risky].mean()) if (~risky).any() else float("nan")
+    high = p_exceed > action_threshold()                              # риск выше порога действия
     return {"n": int(ok.sum()), "share_above_360": float(y.mean()), "mae": mae, "auc": auc,
             "coverage_90": coverage, "brier": brier, "brier_climatology": brier_clim,
-            "rate_when_risky": rate_risky, "rate_when_safe": rate_safe}
+            "rate_when_risky": rate_risky, "rate_when_safe": rate_safe,
+            "n_above_action_threshold": int(high.sum()),
+            "rate_above_action_threshold": float(y[high].mean()) if high.any() else float("nan"),
+            "mean_p_above_action_threshold": float(p_exceed[high].mean()) if high.any() else float("nan")}
 
 
 def validation_report() -> dict:
@@ -182,7 +222,8 @@ def validation_report() -> dict:
     train_end = pd.Timestamp(cfg["periods"]["train_end"])
     pak = pd.read_parquet(CACHE_DIR / "pak_sulfur.parquet")
     q21 = pd.read_parquet(CACHE_DIR / "q21_sulfur.parquet")
-    running = pd.read_parquet(CACHE_DIR / "running.parquet")["ho_running"]
+    running_frame = pd.read_parquet(CACHE_DIR / "running.parquet")
+    running = running_frame["ho_running"]
     lims = pd.read_parquet(CACHE_DIR / "lims.parquet")
     state = pd.read_parquet(CACHE_DIR / "state_sulfur.parquet")
 
@@ -193,8 +234,9 @@ def validation_report() -> dict:
         lims[(lims["point"] == "HT2") & (lims["parameter"] == "Mg.Sulfur")].sort_values("time"), train_end)
     sulfur_metrics["Фильтр только по ПАК"] = _sulfur_only_pak(pak, running, lims, calib)
     clim_rate = float((lims_s["value"] > 10).mean())
-    coverage, brier, brier_clim = _coverage_brier(state, lims_s, clim_rate, calib["sulfur"]["sigma_lims"])
+    coverage, brier, brier_clim, alert = _coverage_brier(state, lims_s, clim_rate, calib["sulfur"]["sigma_lims"])
 
+    probability_metrics = _probability_calibration(state, lims_s, running_frame, calib)
     t95_metrics = _t95_metrics(train_end)
     forecast_metrics = _sulfur_forecast_metrics(train_end, calib["sulfur"]["sigma_lims"])
     summary_txt = (f"сера n={len(lims_s)}, доля>10={clim_rate:.1%}, Brier={brier:.4f} (климатология {brier_clim:.4f}); "
@@ -206,7 +248,8 @@ def validation_report() -> dict:
     report = {
         "period": {"start": str(train_end), "end": str(pak.index.max())},
         "sulfur": {"n_analyses": len(lims_s), "share_above_10": clim_rate, "estimators": sulfur_metrics,
-                   "coverage_90": coverage, "brier": brier, "brier_climatology": brier_clim},
+                   "coverage_90": coverage, "brier": brier, "brier_climatology": brier_clim, "alert": alert,
+                   "probability_calibration": probability_metrics},
         "sulfur_forecast": forecast_metrics, "t95_risk": t95_metrics,
         "vak": {"n_comparisons": len(vak_df), "n_fit": int((vak_df["verdict"] == "пригодна").sum())},
         "summary": summary_txt,

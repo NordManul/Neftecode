@@ -8,22 +8,29 @@ from __future__ import annotations
 from typing import Any
 
 
-def _fmt(x: Any) -> str:
+def _fmt(x: Any, pct: bool = False) -> str:
+    """Числа с двумя знаками; вероятности (`pct`) - в процентах без дробей."""
     if x is None:
         return "-"
+    if isinstance(x, bool):
+        return "да" if x else "нет"
+    if x == "" or (isinstance(x, (list, tuple)) and not x):
+        return "нет"
     if isinstance(x, float):
-        if abs(x) < 1 and x != 0:
-            return f"{x:.0%}" if 0 <= x <= 1 else f"{x:.3g}"
-        return f"{x:.2f}"
+        return f"{x:.0%}" if pct else f"{x:.2f}"
     if isinstance(x, (list, tuple)):
-        return ", ".join(_fmt(v) for v in x)
+        return ", ".join(_fmt(v, pct) for v in x)
     if isinstance(x, dict):
         return "; ".join(f"{k}={_fmt(v)}" for k, v in x.items())
     return str(x)
 
 
+def _is_probability(key: str) -> bool:
+    return key.startswith("P(") or key in ("балл",)
+
+
 def _dict_lines(d: dict) -> str:
-    return "\n".join(f"- **{k}**: {_fmt(v)}" for k, v in d.items())
+    return "\n".join(f"- **{k}**: {_fmt(v, _is_probability(k))}" for k, v in d.items())
 
 
 def _block3(b3) -> str:
@@ -41,16 +48,18 @@ def _block5(b5) -> str:
     if not b5:
         return "-"
     lines = ["| Проверка | Значение | Результат |", "|---|---|---|"]
-    lines += [f"| {c['check']} | {_fmt(c['value'])} | {'выполнено' if c['ok'] else 'нарушено'} |" for c in b5]
+    lines += [f"| {c['check']} | {_fmt(c['value'], 'шанс' in c['check'] or 'навреди' in c['check'])} | "
+              f"{'выполнено' if c['ok'] else 'нарушено'} |" for c in b5]
     return "\n".join(lines)
 
 
 def _alternatives_md(alts: list[dict]) -> str:
     if not alts:
         return "Нет допустимых альтернатив."
-    lines = ["| id | балл | запас качества | примечание |", "|---|---|---|---|"]
+    lines = ["| id | ΔT5, °C | ΔF9 | ΔF32, т/ч | P(S>10) | P(T95>360) | запас по сере, мг/кг |", "|---|---|---|---|---|---|---|"]
     for a in alts:
-        lines.append(f"| {a.get('id')} | {_fmt(a.get('score'))} | {_fmt(a.get('quality_margin'))} | {a.get('note', '')} |")
+        lines.append(f"| {a.get('id')} | {_fmt(a.get('dT5'))} | {_fmt(a.get('rF9'), True)} | {_fmt(a.get('dF32'))} | "
+                     f"{_fmt(a.get('P_exceed'), True)} | {_fmt(a.get('P_t95'), True)} | {_fmt(a.get('quality_margin'))} |")
     return "\n".join(lines)
 
 

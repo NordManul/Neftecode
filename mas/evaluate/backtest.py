@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 
 from mas.agents.orchestrator import Orchestrator
-from mas.common import CACHE_DIR, CONFIG_DIR, OUTPUTS_DIR, action_threshold, load_cfg, to_jsonable
+from mas.common import CACHE_DIR, CONFIG_DIR, OUTPUTS_DIR, action_threshold, load_cfg, to_jsonable, v
 
 CHUNK_MONTHS = 4
 
@@ -37,6 +37,7 @@ def _row_from_rec(rec) -> dict:
         "t": rec.t, "status": rec.status, "dT5": chosen.get("dT5"), "rF9": chosen.get("rF9"),
         "dF32": chosen.get("dF32"), "P_exceed": chosen.get("P_exceed"), "P_t95": chosen.get("P_t95"),
         "P_exceed_before": p_s_before, "P_t95_before": p_t95_before,
+        "P_now": (rec.blocks.get("2. Проблема / риск") or {}).get("P(S>10) сейчас"),
         "score": chosen.get("score"), "quality_margin": chosen.get("quality_margin"),
         "escalation": "ЭСКАЛАЦИЯ" in rec.status, "explanation": rec.blocks.get("7. Объяснение", ""),
     }
@@ -51,6 +52,8 @@ def _failure_reason(explanation: str) -> str | None:
         return "вне области модели"
     if "Нет допустимого варианта" in explanation:
         return "нет допустимого варианта"
+    if "Повторная проверка не пройдена" in explanation:
+        return "повторная проверка"
     return None
 
 
@@ -60,6 +63,42 @@ def _episodes(action_mask: pd.Series) -> tuple[float, float]:
     lengths = lengths[lengths > 0]
     months = (action_mask.index.max() - action_mask.index.min()).days / 30.437
     return (len(lengths) / months if months > 0 else 0.0), (float(lengths.median()) if len(lengths) else 0.0)
+
+
+DETECTION_LEADS_H = (1.0, 4.0, 7.0)
+
+
+def _detection(cycles: pd.DataFrame, lab: pd.DataFrame, limit: float, threshold: float) -> list[dict]:
+    """Сигнал о риске по сере на рабочем цикле (расчётная вероятность превышения выше `threshold`) против результата анализа ЛИМС
+    (`lab`: `time`, `value`), отобранного не раньше чем через `lead` часов после цикла. Упреждение 1 ч - лучшее, что возможно при
+    шаге цикла, 4 ч - горизонт прогноза, 7 ч - конец окна проявления эффекта действия (2-8 ч)."""
+    from mas.contracts import STATUS_OBSERVE
+    lab = lab.sort_values("time")
+    cyc = cycles.assign(t=pd.to_datetime(cycles["t"])).sort_values("t").reset_index(drop=True)
+    working = ~cyc["status"].str.replace(r" \+.*", "", regex=True).eq(STATUS_OBSERVE)
+    flagged = (pd.to_numeric(cyc["P_now"], errors="coerce").fillna(0) > threshold).to_numpy()
+    recommended = cyc["status"].str.startswith("КОРРЕКТИРУЮЩЕЕ").to_numpy()
+    out = []
+    for lead in DETECTION_LEADS_H:
+        pos = cyc["t"].searchsorted(lab["time"] - pd.Timedelta(hours=lead), side="right") - 1
+        keep = pos >= 0
+        pos, y = pos[keep], (lab["value"].to_numpy()[keep] > limit)
+        ok = working.to_numpy()[pos]
+        pos, y = pos[ok], y[ok]
+        al = flagged[pos]
+        if not len(y):
+            out.append({"lead_h": lead, "n_analyses": 0, "share_flagged": None, "precision": None, "recall": None,
+                        "share_flagged_with_recommendation": None})
+            continue
+        out.append({"lead_h": lead, "n_analyses": int(len(y)), "share_flagged": float(al.mean()),
+                    "precision": float(y[al].mean()) if al.any() else None, "recall": float(al[y].mean()) if y.any() else None,
+                    "share_flagged_with_recommendation": float(recommended[pos][al].mean()) if al.any() else None})
+    return out
+
+
+def _test_lab_sulfur(cfg: dict) -> pd.DataFrame:
+    lims = pd.read_parquet(CACHE_DIR / "lims.parquet")
+    return lims[(lims["point"] == "HT2") & (lims["parameter"] == "Mg.Sulfur") & (lims["time"] >= pd.Timestamp(cfg["periods"]["train_end"]))]
 
 
 def _summarize(cycles: pd.DataFrame) -> dict:
@@ -85,7 +124,8 @@ def _summarize(cycles: pd.DataFrame) -> dict:
         "n_cycles": n, "status_distribution": dist, "escalation_share": float(cycles["escalation"].mean()) if n else 0.0,
         "driver_share_of_working": {"сера": driver_sulfur, "T95": driver_t95},
         "episodes_per_month": ep_per_month, "episode_median_length": ep_median_len,
-        "failure_reasons": failure_counts,
+        "failure_reasons": failure_counts, "detection": _detection(cycles, _test_lab_sulfur(cfg), v(cfg["spec"]["sulfur_max_mgkg"]),
+                                                                    action_threshold(cfg, "sulfur")),
     }
 
 

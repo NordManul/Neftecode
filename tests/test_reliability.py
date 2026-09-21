@@ -19,7 +19,7 @@ def agent():
 def _snap(agent, t5=None, treq=np.nan, dp_ratio=1.0, d_t5=0.0, in_band=True) -> Snapshot:
     b = agent.bands
     t5 = b["T5"]["p50"] if t5 is None else t5
-    values = {tag: (b[tag]["p5"] + b[tag]["p95"]) / 2 if in_band else b[tag]["p99"] * 2 + 1 for tag in agent._tags() if tag in b}
+    values = {tag: (b[tag]["p5"] + b[tag]["p95"]) / 2 if in_band else b[tag]["p95"] * 2 + 1 for tag in agent._tags() if tag in b}
     values["T5"] = t5
     return Snapshot(t=pd.Timestamp("2025-06-01 12:00"), ho_running=True, avt_running=True, hours_since_start=1000.0,
                     values=values, values_4h_ago={"T5": t5 - d_t5}, sulfur_state={"dp_ratio": dp_ratio},

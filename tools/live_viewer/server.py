@@ -2,7 +2,7 @@
 
 Отдельный инструмент (не входит в пакет `mas`): использует агентов `Orchestrator` и кэш, собранный
 `run.py all`. Возможности: воспроизведение времени, сценарные значения T5, F9, F32 и редактирование
-допущений (пороги приборов, нормы, надёжность, ранжирование, блендинг) с пересчётом в памяти; файлы
+параметров (диапазоны приборов, нормы, надёжность, выход продукта, блендинг) с пересчётом в памяти; файлы
 конфигурации и кэша не изменяются.
 
 Запуск:
@@ -15,7 +15,7 @@ import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -28,7 +28,10 @@ from mas.common import load_cfg, to_jsonable  # noqa: E402
 
 STATIC_DIR = Path(__file__).resolve().parent
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
-                 ".css": "text/css; charset=utf-8"}
+                 ".css": "text/css; charset=utf-8", ".md": "text/plain; charset=utf-8", ".svg": "image/svg+xml",
+                 ".json": "application/json; charset=utf-8", ".csv": "text/plain; charset=utf-8", ".pdf": "application/pdf"}
+# файлы репозитория, доступные для чтения из просмотра (ссылки из сводки и шапки): документы, README, результаты прогона
+READABLE = ("docs", "outputs")
 _assumptions: Assumptions | None = None
 
 
@@ -70,6 +73,15 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         return json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
 
+    def _send_repo_file(self, relative: str) -> None:
+        """Файл внутри репозитория (документы, результаты, README); выход за пределы корня запрещён."""
+        path = (ROOT / relative).resolve()
+        allowed = path == ROOT / "README.md" or any(ROOT / d in path.parents for d in READABLE)
+        if not allowed or not path.is_file() or path.suffix not in CONTENT_TYPES:
+            self._send_json({"error": "не найдено; сводка создаётся командой python run.py dashboard"}, code=404)
+            return
+        self._send(path.read_bytes(), CONTENT_TYPES[path.suffix])
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
@@ -87,6 +99,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(payload, extra={"Content-Disposition": 'attachment; filename="assumptions.json"'})
             elif parsed.path in ("/", "/index.html"):
                 self._send((STATIC_DIR / "index.html").read_bytes(), CONTENT_TYPES[".html"])
+            elif parsed.path == "/dashboard":
+                self._send_repo_file("outputs/dashboard.html")
+            elif parsed.path == "/README.md":
+                self._send_repo_file("README.md")
+            elif parsed.path.split("/")[1] in READABLE and parsed.path.count("/") >= 2:
+                self._send_repo_file(unquote(parsed.path.lstrip("/")))
             else:
                 candidate = STATIC_DIR / parsed.path.lstrip("/")
                 if candidate.suffix in (".js", ".css") and candidate.is_file():
@@ -115,8 +133,13 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8899
     print("Инициализация агентов...")
-    _get_assumptions()
+    try:
+        _get_assumptions()
+    except FileNotFoundError as exc:
+        sys.exit(f"Не найдены расчётные данные ({exc}). Создайте их командой: "
+                 "python run.py all --data <папка с исходными файлами> (подробнее - в README, раздел «Быстрый старт»).")
     print(f"Сервер запущен: http://localhost:{port}")
+    print(f"Сводка результатов: http://localhost:{port}/dashboard")
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 

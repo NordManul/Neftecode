@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from mas.bus import MessageBus
-from mas.common import CACHE_DIR, lims_age_limit_h, load_calib, load_cfg, startup_window_h, v
+from mas.common import CACHE_DIR, lims_age_limit_h, load_calib, load_cfg, max_sigma_for_decision, startup_window_h, v
 from mas.contracts import Issue, Snapshot
 from mas.prepare.quality_flags import trailing_run_length
 from mas.state.derived import load_derived
@@ -143,7 +143,7 @@ class DataAgent:
             issues.append(Issue("critical", "ПАК/Q21", "sulfur", f"Оба анализатора серы забракованы дольше {window:.0f} ч."))
         if not t95_samples:
             issues.append(Issue("critical", "ЛИМС", "95%.T", "Нет анализа T95 продукта или сырья в пределах допустимого возраста."))
-        if sulfur_state.get("S_sigma", 0) > v(self.cfg["sensor_fusion"]["max_sigma_for_decision"]):
+        if sulfur_state.get("S_sigma", 0) > max_sigma_for_decision(self.calib):
             issues.append(Issue("warning", "модель", "S_sigma", f"Неопределённость серы высокая: σ={sulfur_state['S_sigma']:.2f}."))
         return issues
 

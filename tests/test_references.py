@@ -1,8 +1,6 @@
 """Источники допущений: у каждого допущения есть ссылка, нормативные значения совпадают с документами."""
 from __future__ import annotations
 
-import pytest
-
 from mas.common import load_cfg, load_refs, node_refs, v
 
 
@@ -27,8 +25,8 @@ def test_official_and_literature_sources_have_links_and_missing_sources_are_expl
     for rid, r in load_refs().items():
         assert r["kind"] in ("official", "literature", "data", "none")
         assert r.get("short") and r.get("title")
-        if r["kind"] == "official":
-            assert r["url"].startswith("http"), rid
+        if r["kind"] == "official":  # копия документа в проекте (публичный адрес не обязателен)
+            assert r.get("url", "").startswith("http") or r.get("file"), rid
         if r["kind"] == "literature":  # публичная ссылка либо имя предоставленного файла
             assert r.get("url", "").startswith("http") or r.get("file"), rid
         if r["kind"] == "none":
@@ -65,3 +63,18 @@ def test_no_value_rests_on_a_missing_source():
         ids = ids if isinstance(ids, list) else [ids]
         assert all(refs[i]["kind"] != "none" for i in ids), f"значение без источника: {path}"
         assert node["src"] in ("GOST", "REQUIREMENT", "TASK", "DATA", "LIT"), path      # допущений без источника нет
+
+
+def test_local_copies_of_sources_exist_in_project():
+    from mas.common import ROOT
+    for rid, r in load_refs().items():
+        if r.get("file"):
+            assert (ROOT / r["file"]).is_file(), f"нет файла источника {rid}: {r['file']}"
+
+
+def test_sources_used_by_norms_and_parameters_have_local_copies():
+    refs = load_refs()
+    for rid in ("gost_32511_2013", "gost_iso_3405_2013", "gost_iso_20846_2016", "gost_iso_20884_2016",
+                "gost_r_51947_2002", "gost_32508_2013", "tr_ts_013_2011", "its_30_2021", "akhmetov_2002", "zhilina_2022_ugntu",
+                "burondt_project_1228", "customer_clarification", "task_statement"):
+        assert refs[rid].get("file"), rid

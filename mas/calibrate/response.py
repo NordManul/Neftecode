@@ -10,6 +10,8 @@ import pandas as pd
 
 SEED = 0
 N_BOOT = 300
+TEMP_EVENT = (3.0, 0.03)     # изменение T5 за 3 ч не менее 3 °C при изменении ln F9 менее 0.03
+LOAD_EVENT = (0.05, 1.0)     # изменение ln F9 за 3 ч не менее 0.05 при изменении T5 менее 1 °C
 
 
 def _hourly(s: pd.Series, running: pd.Series, train_end: pd.Timestamp) -> pd.Series:
@@ -65,8 +67,8 @@ def calibrate_sulfur_response(ho_vals: pd.DataFrame, pak: pd.DataFrame, ho_runni
     d_t5 = t5_h - t5_h.shift(3)
     d_lnf9 = np.log(f9_h) - np.log(f9_h.shift(3))
 
-    temp_events = _find_events(d_t5, d_lnf9, 3.0, 0.03)
-    load_events = _find_events(d_lnf9, d_t5, 0.05, 1.0)
+    temp_events = _find_events(d_t5, d_lnf9, *TEMP_EVENT)
+    load_events = _find_events(d_lnf9, d_t5, *LOAD_EVENT)
     return {"beta_t": _response_slope(sulfur_h, temp_events, d_t5),
             "beta_f": _response_slope(sulfur_h, load_events, d_lnf9)}
 

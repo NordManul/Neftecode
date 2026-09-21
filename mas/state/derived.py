@@ -43,6 +43,6 @@ def rebuild_derived(cfg: dict, calib: dict) -> dict[str, pd.DataFrame]:
     pak = clean_analyzer(base["pak_sulfur"]["raw"], tuple(v(dq["pak_sulfur_valid"])))
     q21 = clean_analyzer(base["q21_sulfur"]["raw"], tuple(v(dq["q21_sulfur_valid"])))
     lims, _ = clean_lims(_lims_source(base["lims"]), cfg)
-    state, _, treq = compute_state(cfg, calib, ho, running, pak, q21, lims)
+    state, treq = compute_state(cfg, calib, ho, running, pak, q21, lims)
     return {"avt_flags": avt_flags, "ho_flags": ho_flags, "running": running, "pak_sulfur": pak,
             "q21_sulfur": q21, "lims": lims, "state_sulfur": state, "state_treq": treq}

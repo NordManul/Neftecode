@@ -1,7 +1,6 @@
 """Сумма долей, ограничения, режимы и настройки смешения."""
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
 from mas.bus import MessageBus

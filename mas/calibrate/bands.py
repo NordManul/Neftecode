@@ -10,8 +10,10 @@ import pandas as pd
 
 from mas.common import v
 
-PERCENTILES = (1, 5, 95, 99)
-T5_PERCENTILES = (1, 5, 50, 95, 99)  # для T5 нужна ещё медиана - точка отсчёта фактора близости к верхней границе
+# Записываются только перцентили, которые используют агенты: p5-p95 - фактор «доля тегов вне коридора»; p99 (и p1 для T5) - границы
+# вариантов оптимизатора по управляющим тегам; p50 T5 - точка отсчёта фактора близости T5 к верхней границе.
+PERCENTILES = (5, 95)
+CONTROL_PERCENTILES = {"T5": (1, 5, 50, 95, 99), "F9": (5, 95, 99), "F32": (5, 95, 99)}
 
 
 def _corridor(s: pd.Series, percentiles: tuple[int, ...] = PERCENTILES) -> dict[str, float]:
@@ -38,10 +40,10 @@ def calibrate_bands(avt_vals: pd.DataFrame, ho_vals: pd.DataFrame, avt_running: 
 
     ho_tags = sorted((set(cfg["reliability"]["monitored_tags"]["ho"]) | {"F9", "T5"}) - {"GOR"})
     avt_tags = sorted(set(cfg["reliability"]["monitored_tags"]["avt"]) | {"F32"})
-    corridors = {tag: _corridor(ho_train[tag].where(ho_run_train), T5_PERCENTILES if tag == "T5" else PERCENTILES)
-                 for tag in ho_tags}
+    corridors = {tag: _corridor(ho_train[tag].where(ho_run_train), CONTROL_PERCENTILES.get(tag, PERCENTILES)) for tag in ho_tags}
     corridors["GOR"] = _corridor(gor)
-    corridors.update({tag: _corridor(avt_train[tag].where(avt_run_train)) for tag in avt_tags})
+    corridors.update({tag: _corridor(avt_train[tag].where(avt_run_train), CONTROL_PERCENTILES.get(tag, PERCENTILES))
+                      for tag in avt_tags})
 
     dp_norm = (ho_train["P8"] * (feed_ref / ho_train["F9"]) ** 2).where(ho_run_train)
     t5 = ho_train["T5"].where(ho_run_train)

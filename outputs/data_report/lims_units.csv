@@ -1,0 +1,55 @@
+point,parameter,declared_unit,fixed_unit
+AVT1,CFPP,°С,°C
+AVT1,90%.T,°С,°C
+AVT1,50%.T,кг/м3,°C
+AVT1,EBP.T,% об.,°C
+AVT1,PourPoint,°С,°C
+AVT1,D15,°С,кг/м3
+AVT1,I350,°С,%
+AVT1,CloudPoint,°С,°C
+AVT1,CloudPoint_1,°С,?
+AVT1,95%.T,°С,°C
+AVT1,IBP.T,°С,°C
+AVT2,50%.T,°С,°C
+AVT2,EBP.T,°С,°C
+AVT2,D15,кг/м3,кг/м3
+AVT2,CloudPoint,°С,°C
+AVT2,IBP.T,°С,°C
+AVT2,90%.T,°С,°C
+AVT2,95%.T,°С,°C
+AVT2.1,CloudPoint,°С,°C
+AVT2.1,EBP.T,°С,°C
+AVT2.1,D15,кг/м3,кг/м3
+AVT2.1,50%.T,°С,°C
+AVT2.1,IBP.T,°С,°C
+AVT2.1,90%.T,°С,°C
+AVT2.1,95%.T,°С,°C
+AVT3,90%.T,°С,°C
+AVT3,50%.T,°С,°C
+AVT3,FilterabilityLimit.T,°С,°C
+AVT3,95%.T,°С,°C
+AVT3,IBP.T,°С,°C
+AVT3,EBP.T,°С,°C
+AVT3,CloudPoint,°С,°C
+AVT3,D15,кг/м3,кг/м3
+HT1,90%.T,°С,°C
+HT1,IBP.T,°С,°C
+HT1,50%.T,°С,°C
+HT1,95%.T,°С,°C
+HT1,CloudPoint,°С,°C
+HT1,EBP.T,°С,°C
+HT1,D15,кг/м3,кг/м3
+HT1,Mass.Sulfur,% масс.,% масс.
+HT2,CloudPoint,°С,°C
+HT2,D15,кг/м3,кг/м3
+HT2,FlashPoint,°С,°C
+HT2,IBP.T,°С,°C
+HT2,I250,% об.,%
+HT2,95%.T,°С,°C
+HT2,Mg.Sulfur,мг/кг,мг/кг
+HT2,CFPP,°С,°C
+HT2,PourPoint,°С,°C
+HT2,50%.T,°С,°C
+HT2,CetaneNumber,ед.цет.ч.,-
+HT2,90%.T,°С,°C
+HT2,I350,% об.,%

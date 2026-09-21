@@ -12,7 +12,8 @@ import pandas as pd
 from mas.calibrate.bands import calibrate_bands, reference_feed
 from mas.calibrate.response import calibrate_b95, calibrate_gamma, calibrate_sulfur_response, literature_beta
 from mas.calibrate.sulfur_filter import fit_sulfur_filter, sulfur_diagnostics
-from mas.calibrate.risk import background_exceedance
+from mas.calibrate.probability import fit_probability_map
+from mas.calibrate.risk import background_exceedance, sulfur_level_sd
 from mas.calibrate.startup import startup_relaxation
 from mas.calibrate.t95_noise import calibrate_t95_noise
 from mas.common import CACHE_DIR, OUTPUTS_DIR, load_cfg, to_jsonable, v
@@ -62,6 +63,7 @@ def run_calibration() -> dict:
     t95_noise = calibrate_t95_noise(lims, avt_vals["F32"], b95["medium"], train_end, age_limits["HT2:95%.T"])
     startup = startup_relaxation(q21, running["ho_hours_since_start"], train_end)
     risk = background_exceedance(lims, running, cfg, train_end, startup["window_h"])
+    level_sd = sulfur_level_sd(lims, running, train_end, startup["window_h"], sulfur_params["sigma_lims"])
     feed_ref = reference_feed(ho_vals, ho_running, train_end)
 
     beta_t = {"weak": resp["beta_t"]["beta"], "medium": lit["beta_t_medium"], "strong": lit["beta_t_strong"]}
@@ -70,6 +72,7 @@ def run_calibration() -> dict:
     b95_levels = {"weak": b95["weak"], "medium": b95["medium"], "strong": b95["strong"]}
 
     state, _ = kalman_sulfur({"pak": pak, "q21": q21}, lims, ho_running, sulfur_params)
+    probability = fit_probability_map(state, lims, running, cfg, train_end, startup["window_h"])
     t5_1h = ho_vals["T5"].where(ho_running).resample("1h").mean()
     feed_1h = ho_vals["F9"].where(ho_running).resample("1h").mean()
     s_hat_1h = state["S_hat"].resample("1h").mean()
@@ -89,13 +92,14 @@ def run_calibration() -> dict:
         "sulfur": sulfur_params,
         "kinetics": {"beta_t": beta_t, "beta_f": beta_f, "b95": b95_levels, "gamma": gamma},
         "t95": {"sigma": t95_noise["sigma"], "drift": t95_noise["drift"], "offset": offset, "sd_diff": sd_diff},
-        "risk": {"sulfur_background": risk["sulfur_background"], "t95_background": risk["t95_background"]},
         "bands": bands["corridors"], "dp_norm_base": bands["dp_norm_base"],
         "reference": {"feed_tph": feed_ref},
         "reliability": {"t5_roc4h_p95": bands["t5_roc4h_p95"], "t5_roc4h_p99": bands["t5_roc4h_p99"],
                         "dp_ratio_p99": dp_ratio_p99},
         "lims_age_limit_h": age_limits,
-        "startup": {"tau_h": startup["tau_h"], "window_h": startup["window_h"]},
+        "startup": {"window_h": startup["window_h"]},
+        "uncertainty": {"sulfur_level_sd": level_sd},
+        "probability": probability,
     }
     report = {"sulfur": sulfur_diag, "beta_t": resp["beta_t"], "beta_f": resp["beta_f"], "b95": b95,
               "t95": {"n_train_analyses": t95_noise["n"]}, "risk": risk, "sulfur_fit": sulfur_fit, "startup": startup}

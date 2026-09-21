@@ -10,7 +10,8 @@ import pandas as pd
 from scipy.stats import norm
 
 from mas.bus import MessageBus
-from mas.common import action_threshold, load_calib, load_cfg, startup_window_h, v
+from mas.common import (accepted_raw_probability, action_threshold, calibrated_probability, load_calib, load_cfg,
+                        max_sigma_for_decision, startup_window_h, v)
 from mas.contracts import CandidateSet, QualityAssessment
 from mas.models.kalman import forecast_sulfur
 from mas.models.kinetics import chance_exceed, ensemble_sulfur, response_ensemble, t95_ensemble, upper_quantile_mix
@@ -65,12 +66,12 @@ class QualityAgent:
 
     def _confidence(self, snap) -> tuple[float, str]:
         """Доверие к прогнозу - среднее четырёх показателей 0-1 без весов: неопределённость оценки серы относительно
-        предельной `max_sigma_for_decision`, доля исправных анализаторов серы, свежесть их показаний относительно
+        предельной (`max_sigma_for_decision`), доля исправных анализаторов серы, свежесть их показаний относительно
         окна информации (три постоянные времени серы), наличие свежей пробы T95. Метки - по третям шкалы."""
         window = startup_window_h(self.calib)
         s_sigma = snap.sulfur_state.get("S_sigma", np.inf)
         sulfur_age = min(snap.analyzers["pak"]["age_last_ok_h"], snap.analyzers["q21"]["age_last_ok_h"])
-        parts = [1.0 - min(s_sigma / v(self.cfg["sensor_fusion"]["max_sigma_for_decision"]), 1.0),
+        parts = [1.0 - min(s_sigma / max_sigma_for_decision(self.calib), 1.0),
                  snap.analyzers["n_ok"] / 2.0, 1.0 - min(sulfur_age / window, 1.0), 1.0 if snap.t95_samples else 0.0]
         conf = float(np.mean(parts))
         return conf, ("высокая" if conf >= 2 / 3 else ("средняя" if conf >= 1 / 3 else "низкая"))
@@ -89,11 +90,11 @@ class QualityAgent:
 
         conf, label = self._confidence(snap)
         risk_alpha = v(self.cfg["spec"]["risk_alpha"])
-        p_s, p_t = (p if pd.notna(p) else 0.0 for p in (p_exceed_fore, p_t95))
+        p_s, p_t = (p if pd.notna(p) else 0.0 for p in (p_exceed_now, p_t95))
         if p_s > action_threshold(self.cfg, "sulfur") or p_t > action_threshold(self.cfg, "t95"):
             risk = "высокий"
         else:
-            risk = "повышенный" if max(p_s, p_t) > risk_alpha else "низкий"
+            risk = "повышенный" if max(float(calibrated_probability(self.calib, p_s)), p_t) > risk_alpha else "низкий"
 
         warnings = []
         if conf < 2 / 3:
@@ -116,12 +117,13 @@ class QualityAgent:
         sulfur_max, t95_max = v(self.cfg["spec"]["sulfur_max_mgkg"]), v(self.cfg["spec"]["t95_max_c"])
         risk_alpha = v(self.cfg["spec"]["risk_alpha"])
 
-        ln_s_fore = np.full(n, np.log(qa.S_forecast))
+        ln_s_fore = np.full(n, np.log(qa.S_now))     # решение принимается по текущей оценке: прогноз на 4 ч не лучше климатологии
         s_k = ensemble_sulfur(ln_s_fore, table["dT5"].to_numpy(dtype=float), table["rF9"].to_numpy(dtype=float),
                                table["dF32"].to_numpy(dtype=float), gamma, self.members, self.weights)
-        sigma_rel = np.full(n, qa.S_forecast_sigma / qa.S_forecast)
+        sigma_rel = np.full(n, qa.S_sigma / qa.S_now)
         p_exceed, p_exceed_worst = chance_exceed(s_k, sigma_rel, self.weights, sulfur_max)
-        s_upper_mix = upper_quantile_mix(s_k, sigma_rel, self.weights, q=1 - risk_alpha)
+        # верхняя граница смеси - на уровне, которому соответствует допустимая (откалиброванная) вероятность
+        s_upper_mix = upper_quantile_mix(s_k, sigma_rel, self.weights, q=1 - accepted_raw_probability(self.calib, risk_alpha))
 
         b95_values = np.asarray(self.members)[:, 2]
         t95_k = t95_ensemble(np.full(n, qa.t95_est), table["dF32"].to_numpy(dtype=float), b95_values)
@@ -137,7 +139,9 @@ class QualityAgent:
         table["P_exceed"], table["P_exceed_worst"] = p_exceed, p_exceed_worst
         table["T95_mid"], table["T95_upper_worst"], table["T95_upper_mix"], table["P_t95"] = t95_mid, t95_k.max(axis=1), t95_upper_mix, p_t95
         table["quality_margin"] = sulfur_max - s_upper_mix
-        table["q_ok_sulfur"] = p_exceed <= risk_alpha
+        # вариант без изменений допустим, пока риск не выше порога действия; действие обязано вернуть риск к допустимой вероятности
+        table["P_cal"] = calibrated_probability(self.calib, np.where(np.isfinite(p_exceed), p_exceed, 1.0))
+        table["q_ok_sulfur"] = np.where(table["is_no_action"], p_exceed <= action_threshold(self.cfg, "sulfur"), table["P_cal"] <= risk_alpha)
         table["t95_risk_uncontrolled"] = qa.p_t95_exceed if pd.notna(qa.p_t95_exceed) else 0.0
         table["q_ok_t95"] = (p_t95 <= risk_alpha) | (p_t95 <= table["t95_risk_uncontrolled"])
         table["q_reason"] = np.where(~table["q_ok_sulfur"], "риск по сере выше допустимого",

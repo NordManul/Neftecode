@@ -22,6 +22,16 @@ def _share_above(lims: pd.DataFrame, running: pd.DataFrame, param: str, limit: f
     return (float(np.mean(values > limit)) if len(values) else 0.0), int(len(values))
 
 
+def sulfur_level_sd(lims: pd.DataFrame, running: pd.DataFrame, train_end: pd.Timestamp, window: float, sigma_lims: float) -> float:
+    """Стандартное отклонение уровня серы в рабочем режиме обучающего периода, мг/кг: из дисперсии анализов ЛИМС вычтена
+    дисперсия погрешности лабораторного определения (`sigma_lims`)."""
+    rows = lims[(lims["point"] == "HT2") & (lims["parameter"] == "Mg.Sulfur") & (lims["time"] < train_end)].sort_values("time")
+    state = running[["ho_running", "ho_hours_since_start"]].reindex(rows["time"], method="ffill")
+    steady = (state["ho_running"].fillna(False).astype(bool) & (state["ho_hours_since_start"] > window)).to_numpy()
+    values = rows["value"].to_numpy()[steady]
+    return float(np.sqrt(max(np.var(values) - sigma_lims ** 2, 0.0)))
+
+
 def background_exceedance(lims: pd.DataFrame, running: pd.DataFrame, cfg: dict, train_end: pd.Timestamp,
                           window: float) -> dict:
     """`window` - длительность пускового режима, ч (`mas.common.startup_window_h`)."""

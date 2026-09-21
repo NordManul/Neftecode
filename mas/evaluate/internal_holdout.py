@@ -57,13 +57,13 @@ def evaluate_window(params: dict, start: pd.Timestamp, end: pd.Timestamp) -> dic
     lims_s = lims[(lims["point"] == "HT2") & (lims["parameter"] == "Mg.Sulfur") & (lims["time"] >= start) & (lims["time"] < end)]
     estimators = _sulfur_estimators(pak, q21, state, lims_s)
     clim = float((lims_s["value"] > 10).mean())
-    coverage, brier, brier_clim = _coverage_brier(state, lims_s, clim, params["sigma_lims"])
+    coverage, brier, brier_clim, alert = _coverage_brier(state, lims_s, clim, params["sigma_lims"])
     horizon = int(round(v(load_cfg()["sensor_fusion"]["forecast_horizon_h"]) * 6))
     return {"n_analyses": int(len(lims_s)), "share_above_10": clim,
             "estimators": {k: estimators[k] for k in ("Фильтр по двум приборам", "Среднее двух приборов, очищенное",
                                                       "Q21, среднее за час, очищенный", "ПАК, среднее за час, очищенный",
                                                       "Последний анализ ЛИМС")},
-            "coverage_90": coverage, "brier": brier, "brier_climatology": brier_clim,
+            "coverage_90": coverage, "brier": brier, "brier_climatology": brier_clim, "alert": alert,
             "forecast": _forecast_metrics(state, params, lims_s, running, horizon)}
 
 
